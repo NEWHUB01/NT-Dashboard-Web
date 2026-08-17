@@ -609,12 +609,15 @@
     // จะได้ 127.0.0.1/localhost ซึ่ง MikroTik ยิงกลับมาไม่ถึง (มันจะยิงหาตัวเอง)
     // จึงถาม IP จริงในวง LAN จากเซิร์ฟเวอร์มาใช้แทน
     let serverBase = location.origin;
+    let pushToken = "";
     api("/api/server-info").then(async (res) => {
       if (!res.ok) return;
       const info = await res.json();
       const isLocal = /^(127\.|localhost|\[?::1)/i.test(location.hostname);
       if (info.base_url && isLocal) serverBase = info.base_url;
+      pushToken = info.push_token || "";
       if (codeModal.hidden) baseUrlInput.value = serverBase;
+      renderCode();
     }).catch(() => {});
 
     function codeBase() {
@@ -622,7 +625,9 @@
     }
 
     function pushUrl(dev, status) {
-      return `${codeBase()}/status/mikrotik.php?id=${dev.id}&status=${status}`;
+      // ถ้าเซิร์ฟเวอร์ตั้ง PUSH_TOKEN ไว้ ต้องแนบมาด้วยไม่งั้นโดนปฏิเสธ 403
+      const token = pushToken ? `&token=${encodeURIComponent(pushToken)}` : "";
+      return `${codeBase()}/status/mikrotik.php?id=${dev.id}&status=${status}${token}`;
     }
 
     function mikrotikScript(dev, status) {
@@ -634,8 +639,9 @@
     function schedulerScript(dev) {
       // อ่านสถานะปัจจุบันจาก Netwatch แล้วส่งซ้ำ — กันเคสที่อุปกรณ์ up อยู่ก่อนแล้ว
       // จึงไม่มี event เปลี่ยนสถานะให้สคริปต์ On Up ทำงาน
+      const token = pushToken ? `&token=${encodeURIComponent(pushToken)}` : "";
       return `:local st [/tool netwatch get [find where host="${dev.ip}"] status];\n`
-        + `:do { /tool fetch url="${codeBase()}/status/mikrotik.php?id=${dev.id}&status=$st" keep-result=no; } `
+        + `:do { /tool fetch url="${codeBase()}/status/mikrotik.php?id=${dev.id}&status=$st${token}" keep-result=no; } `
         + `on-error={ :log warning "NT-CCTV: sync id=${dev.id} failed"; }`;
     }
 

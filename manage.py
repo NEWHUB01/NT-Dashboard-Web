@@ -5,6 +5,7 @@
   python manage.py add <ชื่อ> [รหัสผ่าน]     เพิ่มผู้ใช้ (ไม่ใส่รหัสจะถามแบบซ่อน)
   python manage.py passwd <ชื่อ> [รหัสผ่าน]  เปลี่ยนรหัสผ่าน
   python manage.py del <ชื่อ>               ลบผู้ใช้
+  python manage.py hash <ชื่อ> [รหัสผ่าน]    พิมพ์ค่าสำหรับ env var USERS_JSON (ใช้ตอน deploy)
 """
 import getpass
 import json
@@ -72,6 +73,13 @@ def main():
         users[name] = generate_password_hash(pw)
         save_users(users)
         print(f"เปลี่ยนรหัสผ่านของ '{name}' แล้ว")
+
+    elif cmd == "hash" and len(args) >= 2:
+        # ไม่แตะ users.json — แค่พิมพ์ JSON ไว้ก๊อปไปใส่ env var บนโฮสต์ที่เขียนไฟล์ไม่ได้
+        name = args[1]
+        pw = args[2] if len(args) >= 3 else ask_password()
+        print("ใส่ค่านี้ใน environment variable ชื่อ USERS_JSON:")
+        print(json.dumps({name: generate_password_hash(pw)}, ensure_ascii=False))
 
     elif cmd == "del" and len(args) >= 2:
         name = args[1]

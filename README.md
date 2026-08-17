@@ -37,16 +37,33 @@ python server.py
 `config.json` (secret key + api key), `users.json` (hash รหัสผ่าน) และ `devices.json`
 (ชื่อสถานที่ + IP ภายใน) อยู่ใน `.gitignore` — เซิร์ฟเวอร์สร้างให้เองตอนรันครั้งแรก
 
-## ข้อจำกัดเรื่องการ deploy
+## ที่เก็บข้อมูล
 
-แอปนี้เก็บสถานะลงไฟล์ `devices.json` และออกแบบมาให้รันเป็น process ค้างไว้ในวง LAN เดียวกับ MikroTik
-จึงต้อง deploy บนโฮสต์ที่**เขียนดิสก์ได้และรัน process ค้างได้** เช่นเครื่องในสำนักงาน, VPS,
-Railway, Render, Fly.io
+แอปเลือกที่เก็บข้อมูลเองอัตโนมัติ:
 
-บน **Vercel** (serverless) ระบบไฟล์เป็น read-only และแต่ละ request อาจอยู่คนละ instance
-สถานะที่ MikroTik ยิงเข้ามาจะหายทันที — ต้องเปลี่ยนที่เก็บข้อมูลไปใช้ฐานข้อมูลภายนอก
-(Vercel KV / Postgres / Upstash Redis) ก่อน ดูหัวข้อในรายงานประกอบ
+- **ไม่ตั้ง env var ของ Redis** → เก็บลงไฟล์ `devices.json` / `config.json` (โหมดรันเองในวง LAN)
+- **ตั้ง `KV_REST_API_URL` + `KV_REST_API_TOKEN`** → เก็บลง Redis ผ่าน REST API
+  (จำเป็นบน serverless เพราะระบบไฟล์เขียนไม่ได้ และแต่ละ request อาจอยู่คนละ instance)
 
-หมายเหตุความปลอดภัย: `/status/mikrotik.php` ไม่มีการยืนยันตัวตน (MikroTik ล็อกอินไม่ได้)
-ถ้านำขึ้นอินเทอร์เน็ตสาธารณะ ใครก็ตามที่รู้ URL จะตั้งสถานะอุปกรณ์ได้ — ควรใช้ในวง LAN
-หรือเพิ่ม token ลับใน URL ก่อน
+## deploy ขึ้น Vercel
+
+1. สร้าง Redis store: หน้าโปรเจกต์บน Vercel → **Storage** → **Upstash for Redis** → Connect
+   Vercel จะใส่ `KV_REST_API_URL` และ `KV_REST_API_TOKEN` ให้เอง
+2. ตั้ง environment variable ที่เหลือใน **Settings → Environment Variables**
+
+   | ตัวแปร | ค่า |
+   |---|---|
+   | `SECRET_KEY` | สุ่มมา เช่น `python -c "import secrets;print(secrets.token_hex(32))"` |
+   | `USERS_JSON` | ผลลัพธ์จาก `python manage.py hash admin <รหัสผ่าน>` |
+   | `PUSH_TOKEN` | รหัสลับสำหรับ MikroTik เช่น `python -c "import secrets;print(secrets.token_urlsafe(24))"` |
+
+3. Deploy แล้วเข้าหน้า **อุปกรณ์** กดปุ่ม **โค้ด** — สคริปต์ที่ได้จะใส่โดเมน Vercel
+   และ `&token=...` ให้เรียบร้อย เอาไปวางใน MikroTik ได้เลย
+
+MikroTik ต้องออกอินเทอร์เน็ตได้เพื่อยิงสถานะขึ้นโดเมน Vercel
+
+**สำคัญ:** ถ้าไม่ตั้ง `PUSH_TOKEN` ใครที่รู้ URL ก็ตั้งสถานะอุปกรณ์ได้ เพราะ `/status/mikrotik.php`
+ไม่มีการล็อกอิน (MikroTik ล็อกอินไม่ได้) — ในวง LAN ปิดพอรับได้ แต่บนอินเทอร์เน็ต **ต้องตั้ง**
+
+โฮสต์แบบรัน process ค้างได้ (Railway / Render / Fly.io / VPS) ก็ใช้ได้เหมือนกัน
+และไม่ต้องมี Redis ถ้าดิสก์เขียนได้
