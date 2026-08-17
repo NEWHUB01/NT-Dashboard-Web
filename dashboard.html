@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#3d4de0" />
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" type="image/png" href="icon-192.png" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<title>NT CCTV - Dashboard</title>
+<script>
+  // render-blocking auth guard: redirect before anything paints (no flash)
+  if (sessionStorage.getItem("ntcctv_auth") !== "1" && localStorage.getItem("ntcctv_auth") !== "1") {
+    location.replace("index.html");
+  }
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div class="app-wrap" id="appScreen">
+
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <i class="fa-solid fa-video"></i>
+      <span class="brand-text">NT <b>CCTV</b></span>
+    </div>
+
+    <nav class="nav">
+      <a href="dashboard.html" class="nav-item active">
+        <i class="fa-solid fa-table-cells-large"></i>
+        <span>แผงควบคุม</span>
+      </a>
+
+      <a href="devices.html" class="nav-item">
+        <i class="fa-solid fa-server"></i>
+        <span>อุปกรณ์</span>
+      </a>
+
+      <a href="#" class="nav-item" id="navSettings">
+        <i class="fa-solid fa-gear"></i>
+        <span>การตั้งค่า</span>
+      </a>
+
+      <a href="#" class="nav-item" id="navLogout">
+        <i class="fa-solid fa-right-from-bracket"></i>
+        <span>ออกจากระบบ</span>
+      </a>
+    </nav>
+
+    <button class="collapse-btn" id="collapseBtn" title="ย่อ/ขยายเมนู">
+      <i class="fa-solid fa-chevron-left"></i>
+    </button>
+  </aside>
+
+  <!-- Main -->
+  <div class="main">
+    <header class="topbar">
+      <div class="search-box">
+        <input type="text" placeholder="Search for..." />
+        <button><i class="fa-solid fa-magnifying-glass"></i></button>
+      </div>
+      <div class="top-actions">
+        <div class="notif-wrap">
+          <button class="icon-btn bell-btn" id="notifBell" title="การแจ้งเตือน">
+            <i class="fa-solid fa-bell"></i>
+            <span class="badge" id="alertBadge">0</span>
+          </button>
+          <div class="notif-panel" id="notifPanel" hidden>
+            <div class="notif-panel-header">
+              <span>อุปกรณ์ที่มีปัญหา (DOWN)</span>
+              <button class="notif-refresh" id="notifRefreshBtn" title="รีเฟรชข้อมูล">
+                <i class="fa-solid fa-arrows-rotate"></i>
+              </button>
+            </div>
+            <ul class="notif-list" id="notifList"></ul>
+            <div class="notif-panel-footer" id="notifUpdatedAt">อัปเดตล่าสุด: -</div>
+          </div>
+        </div>
+        <div class="profile-wrap">
+          <button class="profile" id="profileBtn" title="บัญชีผู้ใช้">
+            <i class="fa-solid fa-circle-user"></i>
+          </button>
+          <div class="profile-menu" id="profileMenu" hidden>
+            <div class="profile-menu-user">
+              <i class="fa-solid fa-user"></i>
+              <span>admin</span>
+            </div>
+            <button class="profile-menu-item" id="profileLogout">
+              <i class="fa-solid fa-right-from-bracket"></i>
+              <span>ออกจากระบบ</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="content">
+      <div class="content-head">
+        <h1>Dashboard</h1>
+        <div class="api-status demo" id="apiStatus">
+          <i class="fa-solid fa-circle"></i>
+          <span>แสดงข้อมูลตัวอย่าง (ยังไม่ได้ตั้งค่า API)</span>
+        </div>
+      </div>
+
+      <section class="cards-grid" id="cardsGrid">
+        <!-- cards injected by JS -->
+      </section>
+    </main>
+  </div>
+</div>
+
+<!-- ===================== SETTINGS / API MODAL ===================== -->
+<div class="modal-overlay" id="settingsModal" hidden>
+  <div class="modal">
+    <div class="modal-header">
+      <h2><i class="fa-solid fa-gear"></i> ตั้งค่าการเชื่อมต่อ API</h2>
+      <button class="modal-close" id="settingsClose"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+
+    <div class="modal-body">
+      <label class="field">
+        <span>API Endpoint URL</span>
+        <div class="field-input">
+          <i class="fa-solid fa-link"></i>
+          <input type="text" id="apiUrl" placeholder="https://example.com/api/status" />
+        </div>
+      </label>
+
+      <label class="field">
+        <span>API Key / Bearer Token (เก็บบนเซิร์ฟเวอร์ — F12 มองไม่เห็น)</span>
+        <div class="field-input">
+          <i class="fa-solid fa-key"></i>
+          <input type="text" id="apiKey" placeholder="ไม่บังคับ" />
+        </div>
+      </label>
+
+      <label class="remember">
+        <input type="checkbox" id="autoRefresh" />
+        <span>ดึงข้อมูลอัตโนมัติทุก 30 วินาที</span>
+      </label>
+
+      <div class="schema-hint">
+        <p><strong>รูปแบบข้อมูลที่รองรับ</strong> — API ควรตอบกลับ JSON แบบใดแบบหนึ่งต่อไปนี้:</p>
+        <p class="schema-title">1) แบบสรุปยอดแล้ว</p>
+        <pre>{
+  "recorder":    {"up":33,"down":0,"unknown":0},
+  "camera":      {"up":707,"down":12,"unknown":0},
+  "transmitter": {"up":0,"down":0,"unknown":0},
+  "receiver":    {"up":0,"down":0,"unknown":0},
+  "router":      {"up":6,"down":0,"unknown":0},
+  "accesspoint": {"up":126,"down":1,"unknown":0}
+}</pre>
+        <p class="schema-title">2) แบบรายอุปกรณ์ (ระบบจะนับให้อัตโนมัติ)</p>
+        <pre>[
+  {"category":"camera","status":"up"},
+  {"category":"router","status":"down"},
+  ...
+]</pre>
+      </div>
+
+      <p class="login-error" id="apiError"></p>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn-secondary" id="apiTestBtn">ทดสอบเชื่อมต่อ</button>
+      <button class="btn-primary" id="apiSaveBtn">บันทึก &amp; ดึงข้อมูล</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script>
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  }
+</script>
+</body>
+</html>

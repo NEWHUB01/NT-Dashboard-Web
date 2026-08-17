@@ -1,0 +1,26 @@
+# ---- ความลับ: ห้าม commit ขึ้น GitHub เด็ดขาด ----
+# (git ไม่รองรับ comment ท้ายบรรทัดเดียวกับ pattern — ต้องแยกบรรทัดแบบนี้)
+
+# มี secret_key ที่ใช้เซ็น session cookie และ api_key ของ API ปลายทาง
+config.json
+
+# มี hash รหัสผ่านของผู้ใช้
+users.json
+
+# ---- ข้อมูลใช้งานจริง (ชื่อสถานที่ / IP ภายใน) — server สร้างเองตอนรัน ----
+devices.json
+
+# ---- python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# ---- เครื่องมือ / editor ----
+.vercel
+.env
+.env*.local
+.claude/
+.vscode/
+.idea/
+Thumbs.db

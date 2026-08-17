@@ -1,0 +1,8 @@
+{
+  "recorder":    {"up": 2, "down": 0, "unknown": 1},
+  "camera":      {"up": 70, "down": 0, "unknown": 0},
+  "transmitter": {"up": 2, "down": 0, "unknown": 2},
+  "receiver":    {"up": 2, "down": 0, "unknown": 0},
+  "router":      {"up": 3, "down": 0, "unknown": 0},
+  "accesspoint": {"up": 10, "down": 0, "unknown": 0}
+}

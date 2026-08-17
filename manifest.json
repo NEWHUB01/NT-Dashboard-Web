@@ -1,0 +1,26 @@
+{
+  "name": "NT CCTV Dashboard",
+  "short_name": "NT CCTV",
+  "description": "แผงควบคุมสถานะอุปกรณ์ CCTV / WiFi / เสียงตามสาย",
+  "lang": "th",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#3d4de0",
+  "theme_color": "#3d4de0",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

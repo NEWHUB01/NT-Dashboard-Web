@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#3d4de0" />
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" type="image/png" href="icon-192.png" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<title>NT CCTV - อุปกรณ์</title>
+<script>
+  // render-blocking auth guard: redirect before anything paints (no flash)
+  if (sessionStorage.getItem("ntcctv_auth") !== "1" && localStorage.getItem("ntcctv_auth") !== "1") {
+    location.replace("index.html");
+  }
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div class="app-wrap" id="devicesScreen">
+
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <i class="fa-solid fa-video"></i>
+      <span class="brand-text">NT <b>CCTV</b></span>
+    </div>
+
+    <nav class="nav">
+      <a href="dashboard.html" class="nav-item">
+        <i class="fa-solid fa-table-cells-large"></i>
+        <span>แผงควบคุม</span>
+      </a>
+
+      <a href="devices.html" class="nav-item active">
+        <i class="fa-solid fa-server"></i>
+        <span>อุปกรณ์</span>
+      </a>
+
+      <a href="#" class="nav-item" id="navLogout">
+        <i class="fa-solid fa-right-from-bracket"></i>
+        <span>ออกจากระบบ</span>
+      </a>
+    </nav>
+
+    <button class="collapse-btn" id="collapseBtn" title="ย่อ/ขยายเมนู">
+      <i class="fa-solid fa-chevron-left"></i>
+    </button>
+  </aside>
+
+  <!-- Main -->
+  <div class="main">
+    <header class="topbar">
+      <div class="search-box">
+        <input type="text" id="deviceSearch" placeholder="ค้นหาอุปกรณ์..." />
+        <button><i class="fa-solid fa-magnifying-glass"></i></button>
+      </div>
+      <div class="top-actions">
+        <div class="profile-wrap">
+          <button class="profile" id="profileBtn" title="บัญชีผู้ใช้">
+            <i class="fa-solid fa-circle-user"></i>
+          </button>
+          <div class="profile-menu" id="profileMenu" hidden>
+            <div class="profile-menu-user">
+              <i class="fa-solid fa-user"></i>
+              <span>admin</span>
+            </div>
+            <button class="profile-menu-item" id="profileLogout">
+              <i class="fa-solid fa-right-from-bracket"></i>
+              <span>ออกจากระบบ</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="content">
+      <div class="content-head">
+        <h1>อุปกรณ์</h1>
+      </div>
+
+      <!-- add device form -->
+      <section class="panel">
+        <div class="panel-title">เพิ่มอุปกรณ์ใหม่</div>
+        <form id="deviceForm" class="device-form">
+          <label class="field">
+            <span>ชื่ออุปกรณ์</span>
+            <div class="field-input">
+              <i class="fa-solid fa-tag"></i>
+              <input type="text" id="devName" placeholder="เช่น NVR ทต.บ้านยาง/3621J3580" required />
+            </div>
+          </label>
+          <label class="field">
+            <span>หมวดอุปกรณ์</span>
+            <div class="field-input">
+              <i class="fa-solid fa-layer-group"></i>
+              <select id="devCategory" required>
+                <option value="recorder">เครื่องบันทึก</option>
+                <option value="camera">กล้อง CCTV</option>
+                <option value="transmitter">เครื่องส่ง (เสียงตามสาย)</option>
+                <option value="receiver">เครื่องรับ (ลำโพง)</option>
+                <option value="router">Router (WiFi ชุมชน)</option>
+                <option value="accesspoint">Access Point</option>
+              </select>
+            </div>
+          </label>
+          <label class="field">
+            <span>IP Address (ไม่บังคับ)</span>
+            <div class="field-input">
+              <i class="fa-solid fa-network-wired"></i>
+              <input type="text" id="devIp" placeholder="192.168.10.200" />
+            </div>
+          </label>
+          <button type="submit" class="btn-primary">+ เพิ่มอุปกรณ์</button>
+          <p class="login-error" id="deviceError"></p>
+        </form>
+      </section>
+
+      <!-- devices table -->
+      <section class="panel">
+        <div class="panel-title">รายการอุปกรณ์ (<span id="deviceCount">0</span> ตัว)</div>
+        <div class="table-wrap">
+          <table class="device-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>ชื่อ</th>
+                <th>หมวด</th>
+                <th>IP</th>
+                <th>สถานะ</th>
+                <th>รายงานล่าสุด</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="deviceRows"></tbody>
+          </table>
+        </div>
+        <p class="table-hint">เพิ่มอุปกรณ์แล้วกดปุ่ม <b>&lt;/&gt; โค้ด</b> เพื่อ copy สคริปต์ไปวางใน MikroTik → Tools → Netwatch (แท็บ Up และ Down)</p>
+      </section>
+    </main>
+  </div>
+</div>
+
+<!-- ===================== MIKROTIK CODE MODAL ===================== -->
+<div class="modal-overlay" id="codeModal" hidden>
+  <div class="modal">
+    <div class="modal-header">
+      <h2><i class="fa-solid fa-code"></i> โค้ด MikroTik Netwatch — <span id="codeDevName"></span></h2>
+      <button class="modal-close" id="codeClose"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="modal-body">
+      <p class="code-hint">MikroTik → Tools → Netwatch → เพิ่ม Host เป็น IP ของอุปกรณ์ แล้ววางโค้ดในแท็บ <b>Up</b> และ <b>Down</b> ตามนี้</p>
+
+      <label class="field">
+        <span>URL เซิร์ฟเวอร์ที่ MikroTik จะยิงเข้ามา (ต้องเป็น IP ของเครื่องเซิร์ฟเวอร์ ห้ามใช้ 127.0.0.1)</span>
+        <div class="field-input">
+          <i class="fa-solid fa-server"></i>
+          <input type="text" id="codeBaseUrl" placeholder="http://192.168.10.5:8000" />
+        </div>
+      </label>
+
+      <div class="code-block-head">แท็บ On Up <button class="btn-copy" data-copy="codeUp"><i class="fa-regular fa-copy"></i> copy</button></div>
+      <pre class="code-block" id="codeUp"></pre>
+
+      <div class="code-block-head">แท็บ On Down <button class="btn-copy" data-copy="codeDown"><i class="fa-regular fa-copy"></i> copy</button></div>
+      <pre class="code-block" id="codeDown"></pre>
+
+      <div class="code-block-head" id="codeSyncHead">
+        System → Scheduler (interval 1m) — ส่งสถานะซ้ำเป็นระยะ
+        <button class="btn-copy" data-copy="codeSync"><i class="fa-regular fa-copy"></i> copy</button>
+      </div>
+      <pre class="code-block" id="codeSync"></pre>
+      <p class="code-hint" id="codeSyncHint">สคริปต์ในแท็บ Up/Down จะทำงาน<b>เฉพาะตอนสถานะเปลี่ยน</b>เท่านั้น ถ้าอุปกรณ์ up อยู่แล้วตั้งแต่ก่อนสร้าง Netwatch เว็บจะไม่ได้รับรายงานเลย — ใส่สคริปต์ตัวนี้ใน Scheduler เพื่อให้ส่งสถานะปัจจุบันซ้ำทุก 1 นาที</p>
+
+      <div class="code-block-head">ทดสอบจากเบราว์เซอร์ (ควรขึ้นคำว่า OK)</div>
+      <pre class="code-block" id="codeTestUrl"></pre>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script>
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  }
+</script>
+</body>
+</html>
