@@ -747,6 +747,21 @@ button, input {
   color: var(--text-mid);
   margin: 0 0 14px;
 }
+.storage-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: #fdf3e2;
+  border: 1.5px solid #f0c98a;
+  color: #8a5a12;
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-bottom: 18px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.storage-warn i { margin-top: 2px; }
+
 .code-block-head[hidden] {
   display: none;   /* display:flex ข้างล่างจะชนะ [hidden] ของเบราว์เซอร์ ถ้าไม่เขียนบรรทัดนี้ */
 }

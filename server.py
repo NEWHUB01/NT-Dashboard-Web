@@ -90,9 +90,23 @@ def kv_set(key, raw):
     r.raise_for_status()
 
 
+class StorageError(RuntimeError):
+    """เก็บ/อ่านข้อมูลไม่สำเร็จ — แยกจาก error อื่นเพื่อตอบข้อความที่บอกวิธีแก้ได้"""
+
+
+NO_STORE_HINT = (
+    "บันทึกข้อมูลไม่ได้ เพราะโฮสต์นี้เขียนไฟล์ไม่ได้ และยังไม่ได้เชื่อมฐานข้อมูล — "
+    "ไปที่ Vercel → แท็บ Storage → Upstash for Redis → Connect "
+    "แล้วสั่ง Redeploy อีกครั้ง"
+)
+
+
 def store_load(key, path, default):
     if kv_conn():
-        raw = kv_get(key)
+        try:
+            raw = kv_get(key)
+        except requests.RequestException as exc:
+            raise StorageError(f"อ่านข้อมูลจาก Redis ไม่ได้: {exc}") from exc
         if not raw:
             return default
         try:
@@ -104,9 +118,16 @@ def store_load(key, path, default):
 
 def store_save(key, path, data):
     if kv_conn():
-        kv_set(key, json.dumps(data, ensure_ascii=False))
-    else:
+        try:
+            kv_set(key, json.dumps(data, ensure_ascii=False))
+        except requests.RequestException as exc:
+            raise StorageError(f"บันทึกข้อมูลลง Redis ไม่ได้: {exc}") from exc
+        return
+    try:
         save_json(path, data)
+    except OSError as exc:
+        # เคสหลักบน serverless: ระบบไฟล์ read-only และไม่ได้ตั้ง env var ของ Redis ไว้
+        raise StorageError(NO_STORE_HINT) from exc
 
 
 def load_users():
@@ -169,6 +190,13 @@ app.secret_key = _secret
 app.permanent_session_lifetime = timedelta(days=30)
 app.config["SESSION_COOKIE_HTTPONLY"] = True   # JS อ่าน cookie ไม่ได้
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
+
+@app.errorhandler(StorageError)
+def handle_storage_error(exc):
+    # เดิมจะกลายเป็น 500 เปล่าๆ ทำให้หน้าเว็บบอกได้แค่ "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้"
+    print(f"* storage error: {exc}", flush=True)
+    return jsonify(error=str(exc)), 503
 
 
 @app.after_request
@@ -311,12 +339,15 @@ def api_server_info():
     """
     host = request.host                      # เช่น "127.0.0.1:8000"
     hostname = host.rsplit(":", 1)[0] if ":" in host else host
+    storage = "redis" if kv_conn() else "file"
     if hostname not in ("127.0.0.1", "localhost", "::1"):
         proto = request.headers.get("X-Forwarded-Proto", request.scheme)
-        return jsonify(base_url=f"{proto}://{host}", lan_ip=None, push_token=push_token())
+        return jsonify(base_url=f"{proto}://{host}", lan_ip=None,
+                       push_token=push_token(), storage=storage)
     port = host.rsplit(":", 1)[1] if ":" in host else os.environ.get("PORT", "8000")
     ip = lan_ip()
-    return jsonify(base_url=f"http://{ip}:{port}", lan_ip=ip, push_token=push_token())
+    return jsonify(base_url=f"http://{ip}:{port}", lan_ip=ip,
+                   push_token=push_token(), storage=storage)
 
 
 @app.get("/api/devices")

@@ -618,7 +618,21 @@
       pushToken = info.push_token || "";
       if (codeModal.hidden) baseUrlInput.value = serverBase;
       renderCode();
+      // deploy อยู่บนโฮสต์จริงแต่ยังเก็บลงไฟล์ = serverless ที่ยังไม่ได้ต่อฐานข้อมูล
+      // เตือนไว้ก่อนเลย ไม่ต้องรอให้กดเพิ่มอุปกรณ์แล้วพัง
+      if (info.storage === "file" && !isLocal) showStorageWarning();
     }).catch(() => {});
+
+    function showStorageWarning() {
+      if ($("#storageWarn")) return;
+      const el = document.createElement("div");
+      el.id = "storageWarn";
+      el.className = "storage-warn";
+      el.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i>
+        <span>ยังไม่ได้เชื่อมฐานข้อมูล — โฮสต์นี้เขียนไฟล์ไม่ได้ ทำให้<b>เพิ่มอุปกรณ์และรับสถานะจาก MikroTik ไม่ได้</b>
+        ให้ไปที่ Vercel → แท็บ Storage → Upstash for Redis → Connect แล้วสั่ง Redeploy</span>`;
+      document.querySelector(".content-head").insertAdjacentElement("afterend", el);
+    }
 
     function codeBase() {
       return (baseUrlInput.value.trim() || serverBase).replace(/\/+$/, "");
