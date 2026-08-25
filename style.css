@@ -775,6 +775,15 @@ button, input {
   color: var(--blue-primary);
   margin-bottom: 16px;
 }
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.panel-head .panel-title { margin-bottom: 0; }
 
 .device-form {
   display: grid;

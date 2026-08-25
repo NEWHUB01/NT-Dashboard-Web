@@ -3,7 +3,7 @@
  * - /api/* ไม่ cache เด็ดขาด (ข้อมูลสด + เรื่อง auth)
  * - อัปเดตเวอร์ชัน CACHE_NAME ทุกครั้งที่แก้ไฟล์หน้าเว็บ เพื่อล้าง cache เก่า
  */
-const CACHE_NAME = "ntcctv-shell-v8";
+const CACHE_NAME = "ntcctv-shell-v9";
 
 const SHELL = [
   "/",

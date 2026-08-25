@@ -372,22 +372,68 @@ def push_token():
     return (os.environ.get("PUSH_TOKEN") or "").strip()
 
 
-@app.route("/status/mikrotik.php", methods=["GET", "POST"])
-def mikrotik_push():
-    """รับสถานะจาก MikroTik Netwatch — path เดียวกับระบบจริงในคู่มือ
-    ตัวอย่าง: /status/mikrotik.php?id=359&status=up
-    (ล็อกอินด้วย session ไม่ได้เพราะ MikroTik ทำไม่ได้ — ใช้ PUSH_TOKEN แทนถ้าอยู่บนเน็ต)
+def now_stamp():
+    # เก็บเป็น UTC พร้อม offset ติดไปด้วย — โฮสต์จริงมักรันเป็น UTC (Vercel ก็ใช่)
+    # ถ้าเก็บแบบไม่มี timezone หน้าเว็บจะเอาไปโชว์ดิบๆ แล้วคนดูที่ไทยเห็นเวลาย้อนไป 7 ชั่วโมง
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
-    ทุกครั้งที่มีการยิงเข้ามาจะ log ลงคอนโซล เพื่อให้ไล่ปัญหาได้ว่า
-    MikroTik ยิงมาถึงเซิร์ฟเวอร์จริงหรือไม่ และ id ตรงกับทะเบียนหรือเปล่า
+
+def batch_payload():
+    """รายงานรวมมาได้ทั้งทาง query string และ body ของ POST
+    (RouterOS ส่ง http-data มาโดยไม่ได้ตั้ง content-type เสมอไป Flask จึงอาจไม่แกะให้)"""
+    raw = (request.values.get("batch") or "").strip()
+    if raw:
+        return raw
+    body = request.get_data(as_text=True).strip()
+    if body.startswith("batch="):
+        body = body[len("batch="):]
+    return body.strip()
+
+
+def push_batch(raw, src):
+    """รับสถานะหลายตัวในคำขอเดียว — อ่านทะเบียนครั้งเดียว เขียนกลับครั้งเดียว
+    ไม่ว่าจะมีกี่อุปกรณ์ ต่างจากยิงแยกรายตัวที่กินโควตาฐานข้อมูลเป็นเท่าตัวตามจำนวนอุปกรณ์
+    รูปแบบ: 1:up,2:down,3:unknown
     """
+    store = load_devices()
+    stamp = now_stamp()
+    applied, unknown, bad = 0, [], 0
+
+    for part in raw.split(","):
+        dev_id, _, word = part.strip().partition(":")
+        dev_id = dev_id.strip()
+        if not dev_id:
+            continue
+        status = STATUS_ALIASES.get(word.strip().lower())
+        if not status:
+            bad += 1
+            continue
+        dev = store["devices"].get(dev_id)
+        if not dev:
+            unknown.append(dev_id)
+            continue
+        dev["status"] = None if status == "unknown" else status
+        dev["last_seen"] = stamp
+        applied += 1
+
+    if applied:
+        save_devices(store)      # เขียนทีเดียวสำหรับทั้งชุด
+
+    note = f"* netwatch {src}: รายงานรวม {applied} ตัว"
+    if unknown:
+        note += f" | ไม่พบ id={','.join(unknown[:10])}" + ("..." if len(unknown) > 10 else "")
+    if bad:
+        note += f" | status ไม่ถูกต้อง {bad} รายการ"
+    print(note, flush=True)
+
+    if not applied and (unknown or bad):
+        return "no device matched", 404
+    return f"OK {applied}"
+
+
+def push_one(src):
     dev_id = (request.values.get("id") or "").strip()
     raw = (request.values.get("status") or "").strip().lower()
-    src = request.remote_addr
-    expected = push_token()
-    if expected and not hmac.compare_digest(request.values.get("token") or "", expected):
-        print(f"* netwatch {src}: token ไม่ถูกต้อง id={dev_id or '-'}", flush=True)
-        return "forbidden", 403
     status = STATUS_ALIASES.get(raw)
     if not status:
         print(f"* netwatch {src}: status ไม่ถูกต้อง ('{raw}') id={dev_id or '-'}", flush=True)
@@ -398,12 +444,30 @@ def mikrotik_push():
         print(f"* netwatch {src}: ไม่พบอุปกรณ์ id={dev_id or '-'} (ตรวจเลข ID ในหน้าอุปกรณ์)", flush=True)
         return "unknown id", 404
     dev["status"] = None if status == "unknown" else status
-    # เก็บเป็น UTC พร้อม offset ติดไปด้วย — โฮสต์จริงมักรันเป็น UTC (Vercel ก็ใช่)
-    # ถ้าเก็บแบบไม่มี timezone หน้าเว็บจะเอาไปโชว์ดิบๆ แล้วคนดูที่ไทยเห็นเวลาย้อนไป 7 ชั่วโมง
-    dev["last_seen"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    dev["last_seen"] = now_stamp()
     save_devices(store)
     print(f"* netwatch {src}: id={dev_id} ({dev.get('name')}) -> {status}", flush=True)
     return "OK"
+
+
+@app.route("/status/mikrotik.php", methods=["GET", "POST"])
+def mikrotik_push():
+    """รับสถานะจาก MikroTik Netwatch — path เดียวกับระบบจริงในคู่มือ
+    ทีละตัว: /status/mikrotik.php?id=359&status=up   (สคริปต์แท็บ Up/Down)
+    รวมทีเดียว: batch=1:up,2:down,3:up               (สคริปต์ Scheduler)
+    (ล็อกอินด้วย session ไม่ได้เพราะ MikroTik ทำไม่ได้ — ใช้ PUSH_TOKEN แทนถ้าอยู่บนเน็ต)
+
+    ทุกครั้งที่มีการยิงเข้ามาจะ log ลงคอนโซล เพื่อให้ไล่ปัญหาได้ว่า
+    MikroTik ยิงมาถึงเซิร์ฟเวอร์จริงหรือไม่ และ id ตรงกับทะเบียนหรือเปล่า
+    """
+    src = request.remote_addr
+    expected = push_token()
+    if expected and not hmac.compare_digest(request.values.get("token") or "", expected):
+        print(f"* netwatch {src}: token ไม่ถูกต้อง", flush=True)
+        return "forbidden", 403
+
+    batch = batch_payload()
+    return push_batch(batch, src) if batch else push_one(src)
 
 
 @app.get("/api/server-info")

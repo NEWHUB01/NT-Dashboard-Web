@@ -1158,6 +1158,55 @@
       if (e.target === mapModal) closeMap();
     });
 
+    // -------- สคริปต์ Scheduler รวมทุกอุปกรณ์ --------
+    // ยิงแยกรายตัว = ฐานข้อมูลถูกอ่าน+เขียน 2 ครั้งต่ออุปกรณ์ต่อรอบ ซึ่งโตตามจำนวนอุปกรณ์
+    // รวมเป็นคำขอเดียวแล้วเหลือ 2 ครั้งต่อรอบคงที่ ไม่ว่าจะมีกี่ตัว
+    const batchModal = $("#batchModal");
+    const batchUrlInput = $("#batchBaseUrl");
+
+    function batchBase() {
+      return (batchUrlInput.value.trim() || serverBase).replace(/\/+$/, "");
+    }
+
+    function renderBatchCode() {
+      const withIp = devices.filter((d) => d.ip);
+      $("#batchCount").textContent = withIp.length;
+      $("#batchNoIpCount").textContent = devices.length - withIp.length;
+      $("#batchNoIp").hidden = withIp.length === devices.length;
+
+      if (!withIp.length) {
+        $("#batchCode").textContent =
+          "ยังไม่มีอุปกรณ์ที่กรอก IP — สคริปต์ตัวนี้ต้องใช้ IP ไปอ่านสถานะจาก Netwatch";
+        return;
+      }
+
+      const map = withIp.map((d) => `"${d.id}"="${d.ip}"`).join(";");
+      const token = pushToken ? `?token=${encodeURIComponent(pushToken)}` : "";
+      $("#batchCode").textContent = [
+        `:local map {${map}};`,
+        `:local out "";`,
+        `:foreach id,ip in=$map do={`,
+        `  :local st "unknown";`,
+        `  :local e [/tool netwatch find where host=$ip];`,
+        `  :if ([:len $e] > 0) do={ :set st [/tool netwatch get [:pick $e 0] status]; }`,
+        `  :if ($out != "") do={ :set out ($out . ","); }`,
+        `  :set out ($out . $id . ":" . $st);`,
+        `}`,
+        `:do { /tool fetch url="${batchBase()}/status/mikrotik.php${token}" http-method=post http-data=("batch=" . $out) keep-result=no; } on-error={ :log warning "NT-CCTV: batch sync failed"; }`,
+      ].join("\n");
+    }
+
+    $("#batchBtn").addEventListener("click", () => {
+      batchUrlInput.value = batchBase();
+      renderBatchCode();
+      batchModal.hidden = false;
+    });
+    batchUrlInput.addEventListener("input", renderBatchCode);
+    $("#batchClose").addEventListener("click", () => { batchModal.hidden = true; });
+    batchModal.addEventListener("click", (e) => {
+      if (e.target === batchModal) batchModal.hidden = true;
+    });
+
     // -------- MikroTik code modal --------
     const codeModal = $("#codeModal");
     const baseUrlInput = $("#codeBaseUrl");
@@ -1280,6 +1329,7 @@
       else if (!confirmModal.hidden) closeConfirm();
       else if (!editModal.hidden) closeEditModal();
       else if (!settings.modal.hidden) settings.close();
+      else if (!batchModal.hidden) batchModal.hidden = true;
       else if (!codeModal.hidden) codeModal.hidden = true;
     });
 
