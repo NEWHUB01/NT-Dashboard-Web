@@ -23,7 +23,7 @@ from functools import wraps
 from pathlib import Path
 
 import requests
-from flask import Flask, jsonify, request, send_from_directory, session
+from flask import Flask, abort, jsonify, request, send_from_directory, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
 BASE = Path(__file__).resolve().parent
@@ -190,6 +190,9 @@ app.secret_key = _secret
 app.permanent_session_lifetime = timedelta(days=30)
 app.config["SESSION_COOKIE_HTTPONLY"] = True   # JS อ่าน cookie ไม่ได้
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+# บนโฮสต์จริงเป็น https เสมอ จึงบังคับให้ cookie ไปเฉพาะ https ได้
+# ส่วนโหมดรันเองในวง LAN เป็น http ถ้าบังคับจะล็อกอินไม่ได้เลย
+app.config["SESSION_COOKIE_SECURE"] = bool(kv_conn())
 
 
 @app.errorhandler(StorageError)
@@ -618,6 +621,16 @@ def api_set_config():
 
 
 # ---------------- static frontend ----------------
+# ใช้ allowlist ไม่ใช่ปล่อยให้ขอไฟล์อะไรก็ได้ในโฟลเดอร์ เพราะโฟลเดอร์เดียวกันนี้มี
+# config.json (secret key ที่ใช้เซ็น session) กับ users.json (hash รหัสผ่าน) อยู่ด้วย
+# ถ้าเปิดให้ดึงได้ ใครก็เอา secret key ไปปลอม cookie เข้าเป็น admin ได้ทันที
+PUBLIC_FILES = {
+    "index.html", "dashboard.html", "devices.html",
+    "style.css", "app.js", "sw.js", "manifest.json",
+    "icon-192.png", "icon-512.png",
+}
+
+
 @app.get("/")
 def root():
     return send_from_directory(BASE, "index.html")
@@ -625,6 +638,8 @@ def root():
 
 @app.get("/<path:filename>")
 def static_files(filename):
+    if filename not in PUBLIC_FILES:
+        abort(404)
     return send_from_directory(BASE, filename)
 
 
