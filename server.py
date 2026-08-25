@@ -37,6 +37,10 @@ CONFIG_KEY = "ntcctv:config"
 
 CATEGORY_KEYS = ["recorder", "camera", "transmitter", "receiver", "router", "accesspoint"]
 
+# ไม่มีรายงานเข้ามานานเกินกี่นาที = ถือว่าไม่รู้สถานะจริงแล้ว (0 = ปิดการตรวจ)
+# ค่าเริ่มต้น 3 = พลาดได้ 3 รอบ เมื่อตั้ง Scheduler ใน MikroTik ไว้ที่ 1 นาที
+DEFAULT_STALE_MINUTES = 3
+
 # หมายเลขไอดีอุปกรณ์ที่ผู้ใช้ตั้งเอง — บังคับเป็นตัวเลขล้วน เพราะต้องไปอยู่ใน URL
 # ที่ MikroTik ยิงเข้ามา (?id=359) และตารางหน้าเว็บเรียงลำดับด้วยค่าตัวเลข
 # ห้ามขึ้นต้นด้วย 0 ไม่งั้น "007" กับ "7" จะกลายเป็นคนละอุปกรณ์ทั้งที่ยิงมาเลขเดียวกัน
@@ -262,21 +266,22 @@ def fetch_upstream(url, key, timeout=10):
 @app.get("/api/status")
 @login_required
 def api_status():
+    cfg = load_config()
+
     # โหมด 1: มีอุปกรณ์ในทะเบียน → นับสถานะจากที่ MikroTik รายงานเข้ามา
     store = load_devices()
     if store["devices"]:
+        limit = stale_limit(cfg)
+        now = datetime.now()
         counts = {k: {"up": 0, "down": 0, "unknown": 0} for k in CATEGORY_KEYS}
         for dev in store["devices"].values():
             cat = dev.get("category")
             if cat not in counts:
                 continue
-            s = dev.get("status")
-            bucket = "up" if s == "up" else "down" if s == "down" else "unknown"
-            counts[cat][bucket] += 1
-        return jsonify(source="devices", data=counts)
+            counts[cat][effective_status(dev, limit, now)] += 1
+        return jsonify(source="devices", data=counts, stale_minutes=limit)
 
     # โหมด 2: ตั้งค่า API ภายนอกไว้ → proxy
-    cfg = load_config()
     url = cfg.get("api_url")
     if not url:
         return jsonify(source="demo", data=DEMO_DATA)
@@ -296,6 +301,45 @@ def load_devices():
 
 def save_devices(store):
     store_save(DEVICES_KEY, DEVICES_FILE, store)
+
+
+def stale_limit(cfg):
+    """เพดานเวลาที่ยอมให้เงียบได้ (นาที) — 0 คือปิดการตรวจ"""
+    try:
+        return max(0, int(cfg.get("stale_minutes", DEFAULT_STALE_MINUTES)))
+    except (TypeError, ValueError):
+        return DEFAULT_STALE_MINUTES
+
+
+def quiet_minutes(dev, now):
+    """เงียบมานานกี่นาทีแล้วนับจากรายงานครั้งล่าสุด — คิดฝั่งเซิร์ฟเวอร์เท่านั้น
+    เพราะ last_seen ไม่มี timezone ติดมาด้วย ถ้าให้เบราว์เซอร์คิดเองจะเพี้ยน
+    ทันทีที่ deploy อยู่คนละโซนเวลากับคนดู (เช่นเซิร์ฟเวอร์ UTC คนดูอยู่ไทย)"""
+    if not dev.get("last_seen"):
+        return None
+    try:
+        seen = datetime.fromisoformat(dev["last_seen"])
+    except ValueError:
+        return None
+    return max(0, int((now - seen).total_seconds() // 60))
+
+
+def is_stale(dev, limit_min, now):
+    """เงียบเกินเพดาน = MikroTik ดับ / เน็ตขาด / สคริปต์หาย — ไม่ใช่ว่าอุปกรณ์ยังปกติดี
+    ใช้ได้ต่อเมื่อมีสคริปต์ Scheduler คอยยิงสถานะซ้ำเป็นระยะ ไม่งั้นอุปกรณ์ที่ปกติดี
+    จะไม่มีรายงานเข้ามาเลยหลังครั้งแรก แล้วโดนตีเป็นขาดการติดต่อทั้งที่ไม่มีอะไรผิด"""
+    if not limit_min:
+        return False
+    quiet = quiet_minutes(dev, now)
+    return quiet is not None and quiet >= limit_min
+
+
+def effective_status(dev, limit_min, now):
+    """สถานะที่ใช้นับจริง — เงียบนานเกินไปให้ตกไปเป็น unknown ไม่ว่าค่าล่าสุดจะเป็นอะไร"""
+    status = dev.get("status")
+    if status not in ("up", "down"):
+        return "unknown"
+    return "unknown" if is_stale(dev, limit_min, now) else status
 
 
 def parse_coord(raw_lat, raw_lng):
@@ -416,8 +460,13 @@ def api_devices():
         # id ปกติเป็นตัวเลข แต่กันข้อมูลเก่าที่อาจไม่ใช่ ไม่ให้ทั้งหน้าพังเพราะ int() ระเบิด
         return (0, int(kv[0]), "") if kv[0].isdigit() else (1, 0, kv[0])
 
-    devices = [{"id": k, **v} for k, v in sorted(store["devices"].items(), key=order)]
-    return jsonify(devices=devices)
+    limit = stale_limit(load_config())
+    now = datetime.now()
+    devices = [
+        {"id": k, **v, "quiet_min": quiet_minutes(v, now), "stale": is_stale(v, limit, now)}
+        for k, v in sorted(store["devices"].items(), key=order)
+    ]
+    return jsonify(devices=devices, stale_minutes=limit)
 
 
 @app.post("/api/devices")
@@ -491,7 +540,8 @@ def api_del_device(dev_id):
 def api_get_config():
     cfg = load_config()
     # ส่งกลับแค่ URL และ "มี key หรือไม่" — ไม่ส่งตัว key ออกไปเด็ดขาด
-    return jsonify(url=cfg.get("api_url", ""), hasKey=bool(cfg.get("api_key")))
+    return jsonify(url=cfg.get("api_url", ""), hasKey=bool(cfg.get("api_key")),
+                   staleMinutes=stale_limit(cfg))
 
 
 @app.post("/api/config")
@@ -505,6 +555,12 @@ def api_set_config():
         cfg["api_key"] = key
     elif not cfg["api_url"]:     # ล้าง URL = ล้าง key ด้วย
         cfg.pop("api_key", None)
+    # แก้เฉพาะตอนที่ส่งมาจริง ไม่งั้นหน้าที่ไม่รู้จักฟิลด์นี้จะเผลอล้างค่าทิ้ง
+    if "staleMinutes" in data:
+        try:
+            cfg["stale_minutes"] = max(0, min(1440, int(data.get("staleMinutes") or 0)))
+        except (TypeError, ValueError):
+            return jsonify(error="เวลาที่ยอมให้ขาดการติดต่อต้องเป็นตัวเลข (นาที)"), 400
     save_config(cfg)
     return jsonify(ok=True)
 

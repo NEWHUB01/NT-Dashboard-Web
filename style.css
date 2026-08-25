@@ -501,6 +501,9 @@ button, input {
   color: var(--red);
   font-weight: 700;
 }
+.notif-item .notif-dot.warn { background: var(--orange); }
+.notif-item .notif-count.warn { color: var(--orange); }
+.notif-sub.warn .notif-sub-item { border-left-color: #f6dfb8; }
 .notif-empty {
   padding: 26px 16px;
   text-align: center;
@@ -802,6 +805,7 @@ button, input {
 .device-table tr:hover td { background: #f8f9fd; }
 .dev-id { font-weight: 700; color: var(--blue-primary); }
 .dev-seen { color: var(--text-mid); font-size: 12.5px; white-space: nowrap; }
+.dev-muted { color: var(--text-mid); }
 .dev-empty { text-align: center; color: var(--text-light); padding: 28px !important; }
 
 .dev-status {
@@ -814,6 +818,18 @@ button, input {
 .dev-status.up { background: #e6f7ef; color: var(--green); }
 .dev-status.down { background: #fdeaea; color: var(--red); }
 .dev-status.unknown { background: #fdf3e2; color: var(--orange); }
+/* ขาดการติดต่อ = นับเป็น unknown เหมือนกัน แต่ทำให้แยกออกด้วยตาว่าคนละสาเหตุ */
+.dev-status.stale {
+  background: #fdf3e2;
+  color: var(--orange);
+  border: 1px dashed currentColor;
+}
+.dev-quiet {
+  font-size: 11px;
+  color: var(--text-light);
+  margin-top: 2px;
+}
+.dev-quiet.stale { color: var(--orange); font-weight: 600; }
 
 .dev-actions { white-space: nowrap; text-align: right; }
 .btn-mini {

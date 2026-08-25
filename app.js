@@ -45,15 +45,39 @@
 
   const STATUS_LABEL = { up: "UP", down: "DOWN", unknown: "ยังไม่รายงาน" };
 
+  // หัวข้อตอนกดดูรายการจากการ์ด — ช่อง unknown รวมทั้งตัวที่ยังไม่เคยรายงาน
+  // และตัวที่ขาดการติดต่อ จึงใช้คำว่า "ยังไม่รายงาน" อย่างเดียวไม่ได้
+  const BUCKET_LABEL = { up: "UP", down: "DOWN", unknown: "UNKNOWN (ไม่รู้สถานะ)" };
+
   const COORD_ERROR = 'จุดพิกัดต้องเป็น "ละติจูด, ลองจิจูด" เช่น 13.736717, 100.523186';
 
   // status เป็น null = ยังไม่เคยมีรายงานเข้ามา — นับเป็น unknown เหมือนที่เซิร์ฟเวอร์นับ
-  function devStatus(dev) {
+  function rawStatus(dev) {
     return dev.status === "up" ? "up" : dev.status === "down" ? "down" : "unknown";
   }
 
+  // stale = เงียบเกินเพดานที่ตั้งไว้ เซิร์ฟเวอร์เป็นคนคิดให้ (last_seen ไม่มี timezone
+  // ให้เบราว์เซอร์คิดเองไม่ได้) — ต้องตกเป็น unknown ให้ตรงกับที่เซิร์ฟเวอร์นับ
+  // ไม่งั้นตัวเลขบนการ์ดกับรายการที่กดเข้าไปดูจะไม่ตรงกัน
+  function devStatus(dev) {
+    return dev.stale ? "unknown" : rawStatus(dev);
+  }
+
+  function isStale(dev) {
+    return !!dev.stale && rawStatus(dev) !== "unknown";
+  }
+
+  // "เงียบมานานแค่ไหนแล้ว" — ตัวเลขนาทีมาจากเซิร์ฟเวอร์
+  function quietText(dev) {
+    if (dev.quiet_min === null || dev.quiet_min === undefined) return "";
+    return dev.quiet_min < 1 ? "เพิ่งรายงาน" : `เงียบมา ${dev.quiet_min} นาที`;
+  }
+
   function statusBadge(dev) {
-    const s = devStatus(dev);
+    if (isStale(dev)) {
+      return `<span class="dev-status stale" title="สถานะล่าสุดคือ ${STATUS_LABEL[rawStatus(dev)]} เมื่อ ${dev.quiet_min} นาทีที่แล้ว">ขาดการติดต่อ</span>`;
+    }
+    const s = rawStatus(dev);
     return `<span class="dev-status ${s}">${STATUS_LABEL[s]}</span>`;
   }
 
@@ -88,7 +112,7 @@
 
   // ช่องพิกัดในตาราง: ลิงก์ออก Google Maps เพื่อให้กดนำทางไปหน้างานได้เลย
   function coordCell(dev) {
-    if (!hasCoord(dev)) return cell("", "dev-seen");
+    if (!hasCoord(dev)) return cell("", "dev-muted");
     const td = document.createElement("td");
     const a = document.createElement("a");
     a.className = "dev-map";
@@ -103,6 +127,25 @@
 
   function seenText(dev) {
     return dev.last_seen ? dev.last_seen.replace("T", " ") : "-";
+  }
+
+  // เวลารายงานล่าสุด + บอกด้วยว่าผ่านมานานแค่ไหนแล้ว
+  function seenCell(dev) {
+    const td = document.createElement("td");
+    td.className = "dev-seen";
+    if (!dev.last_seen) {
+      td.textContent = "-";
+      return td;
+    }
+    td.textContent = seenText(dev);
+    const quiet = quietText(dev);
+    if (quiet) {
+      const note = document.createElement("div");
+      note.className = "dev-quiet" + (isStale(dev) ? " stale" : "");
+      note.textContent = quiet;
+      td.appendChild(note);
+    }
+    return td;
   }
 
   // ---------------------------------------------------------------
@@ -229,7 +272,7 @@
       });
 
       const totalDown = CATEGORIES.reduce((sum, c) => sum + ((dashboardData[c.key] || {}).down || 0), 0);
-      $("#alertBadge").textContent = totalDown;
+      $("#alertBadge").textContent = totalDown + deviceList.filter(isStale).length;
       renderNotifPanel();
       applySearchFilter();
     }
@@ -250,7 +293,7 @@
     function openDetail(catKey, status) {
       const cat = CATEGORIES.find((c) => c.key === catKey);
       $("#detailTitle").textContent =
-        `${cat ? cat.title : catKey} — ${STATUS_LABEL[status] || "ทั้งหมด"}`;
+        `${cat ? cat.title : catKey} — ${BUCKET_LABEL[status] || "ทั้งหมด"}`;
 
       const tbody = $("#detailRows");
       tbody.innerHTML = "";
@@ -273,7 +316,7 @@
             cell(dev.ip),
             coordCell(dev),
             tdStatus,
-            cell(seenText(dev), "dev-seen"),
+            seenCell(dev),
           );
           tbody.appendChild(tr);
         });
@@ -296,41 +339,28 @@
       list.innerHTML = "";
       const downCats = CATEGORIES.filter((c) => (dashboardData[c.key] || {}).down > 0);
 
-      if (downCats.length === 0) {
+      // เงียบเกินเพดาน = ไม่รู้สถานะจริงแล้ว ต้องขึ้นเตือนด้วย ไม่งั้นตอนทั้งจุดดับ
+      // ยอด DOWN จะหายไปเฉยๆ แล้วดูเหมือนทุกอย่างเรียบร้อย
+      const staleDevices = deviceList.filter(isStale);
+
+      const groups = [];
+      if (staleDevices.length) {
+        groups.push(notifGroup(
+          "__stale", "ขาดการติดต่อ (ไม่รู้สถานะ)", staleDevices.length, "warn",
+          (ul) => fillNotifSub(ul, staleDevices)
+        ));
+      }
+      downCats.forEach((cat) => {
+        groups.push(notifGroup(
+          cat.key, cat.title, dashboardData[cat.key].down, "",
+          (ul) => fillNotifSub(ul, deviceList.length ? devicesIn(cat.key, "down") : null)
+        ));
+      });
+
+      if (!groups.length) {
         list.innerHTML = `<li class="notif-empty">ไม่มีอุปกรณ์ที่มีปัญหา</li>`;
       } else {
-        downCats.forEach((cat) => {
-          const li = document.createElement("li");
-          li.className = "notif-group";
-
-          const head = document.createElement("button");
-          head.type = "button";
-          head.className = "notif-item";
-          head.innerHTML = `
-            <span class="notif-dot"></span>
-            <span class="notif-name">${cat.title}</span>
-            <span class="notif-count">${dashboardData[cat.key].down} ตัว</span>
-            <i class="fa-solid fa-chevron-down notif-chevron"></i>
-          `;
-
-          const sub = document.createElement("ul");
-          sub.className = "notif-sub";
-          const open = notifOpen.has(cat.key);
-          sub.hidden = !open;
-          head.classList.toggle("open", open);
-          if (open) fillNotifSub(sub, cat.key);
-
-          head.addEventListener("click", () => {
-            const nowOpen = !notifOpen.has(cat.key);
-            if (nowOpen) notifOpen.add(cat.key); else notifOpen.delete(cat.key);
-            sub.hidden = !nowOpen;
-            head.classList.toggle("open", nowOpen);
-            if (nowOpen) fillNotifSub(sub, cat.key);
-          });
-
-          li.append(head, sub);
-          list.appendChild(li);
-        });
+        groups.forEach((g) => list.appendChild(g));
       }
 
       $("#notifUpdatedAt").textContent = "อัปเดตล่าสุด: " + (lastUpdatedAt
@@ -338,13 +368,47 @@
         : "-");
     }
 
-    function fillNotifSub(ul, catKey) {
+    // หัวข้อหนึ่งอันในกระดิ่ง — กางแล้วเรียก fill() มาเติมรายชื่อข้างใต้
+    function notifGroup(key, title, count, tone, fill) {
+      const li = document.createElement("li");
+      li.className = "notif-group";
+
+      const head = document.createElement("button");
+      head.type = "button";
+      head.className = "notif-item";
+      head.innerHTML = `
+        <span class="notif-dot ${tone}"></span>
+        <span class="notif-name">${title}</span>
+        <span class="notif-count ${tone}">${count} ตัว</span>
+        <i class="fa-solid fa-chevron-down notif-chevron"></i>
+      `;
+
+      const sub = document.createElement("ul");
+      sub.className = "notif-sub " + tone;
+      const open = notifOpen.has(key);
+      sub.hidden = !open;
+      head.classList.toggle("open", open);
+      if (open) fill(sub);
+
+      head.addEventListener("click", () => {
+        const nowOpen = !notifOpen.has(key);
+        if (nowOpen) notifOpen.add(key); else notifOpen.delete(key);
+        sub.hidden = !nowOpen;
+        head.classList.toggle("open", nowOpen);
+        if (nowOpen) fill(sub);
+      });
+
+      li.append(head, sub);
+      return li;
+    }
+
+    // list เป็น null = โหมด API ภายนอก ซึ่งมีแต่ยอดรวม ไม่มีรายตัวให้แสดง
+    function fillNotifSub(ul, list) {
       ul.innerHTML = "";
-      const list = devicesIn(catKey, "down");
-      if (!list.length) {
+      if (!list || !list.length) {
         const li = document.createElement("li");
         li.className = "notif-sub-empty";
-        li.textContent = "ตัวเลขชุดนี้มาจาก API ภายนอก จึงดูรายตัวไม่ได้";
+        li.textContent = list ? "ไม่มีอุปกรณ์ในกลุ่มนี้" : "ตัวเลขชุดนี้มาจาก API ภายนอก จึงดูรายตัวไม่ได้";
         ul.appendChild(li);
         return;
       }
@@ -359,6 +423,7 @@
         const meta = document.createElement("div");
         meta.className = "notif-sub-meta";
         meta.textContent = [
+          isStale(dev) ? `สถานะล่าสุด ${STATUS_LABEL[rawStatus(dev)]} · ${quietText(dev)}` : "",
           dev.circuit ? `วงจร ${dev.circuit}` : "",
           dev.ip,
           dev.last_seen ? `ล่าสุด ${seenText(dev)}` : "",
@@ -439,6 +504,7 @@
       $("#apiError").textContent = "";
       $("#apiUrl").value = "";
       $("#apiKey").value = "";
+      $("#staleMinutes").value = "";
       $("#autoRefresh").checked = autoRefreshOn();
       settingsModal.hidden = false;
       try {
@@ -449,6 +515,7 @@
           $("#apiKey").placeholder = cfg.hasKey
             ? "ตั้งค่าไว้แล้ว (ซ่อนอยู่บนเซิร์ฟเวอร์) — พิมพ์ใหม่เพื่อเปลี่ยน"
             : "ไม่บังคับ";
+          $("#staleMinutes").value = cfg.staleMinutes;
         }
       } catch {}
     }
@@ -527,12 +594,15 @@
       const errEl = $("#apiError");
       errEl.style.color = "";
       errEl.textContent = "กำลังบันทึก...";
+      const stale = $("#staleMinutes").value.trim();
       try {
         const res = await api("/api/config", {
           method: "POST",
           body: JSON.stringify({
             url: $("#apiUrl").value.trim(),
             key: $("#apiKey").value.trim(),
+            // เว้นว่างไว้ = ไม่แตะค่าเดิม (ปิดการตรวจต้องใส่ 0 ตามที่คำอธิบายบอก)
+            ...(stale === "" ? {} : { staleMinutes: stale }),
           }),
         });
         if (!res.ok) throw new Error("HTTP " + res.status);
@@ -725,7 +795,7 @@
           cell(dev.ip),
           coordCell(dev),
           tdStatus,
-          cell(seenText(dev), "dev-seen"),
+          seenCell(dev),
           tdActions,
         );
         tbody.appendChild(tr);
