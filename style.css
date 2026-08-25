@@ -393,7 +393,7 @@ button, input {
   position: absolute;
   top: calc(100% + 12px);
   right: 0;
-  width: 320px;
+  width: 360px;
   background: #fff;
   border-radius: 14px;
   box-shadow: 0 16px 40px rgba(20, 25, 80, .18);
@@ -425,9 +425,10 @@ button, input {
   list-style: none;
   margin: 0;
   padding: 6px;
-  max-height: 260px;
+  max-height: 400px;
   overflow-y: auto;
 }
+.notif-group { list-style: none; }
 .notif-item {
   display: flex;
   align-items: center;
@@ -435,8 +436,55 @@ button, input {
   padding: 10px 10px;
   border-radius: 10px;
   font-size: 13.5px;
+  /* หัวข้อหมวดเป็น <button> เพื่อกางรายชื่ออุปกรณ์ที่ down ข้างใต้ */
+  width: 100%;
+  background: none;
+  border: none;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
 }
 .notif-item:hover { background: #f8f9fd; }
+.notif-chevron {
+  color: var(--text-light);
+  font-size: 11px;
+  transition: transform .15s;
+}
+.notif-item.open .notif-chevron { transform: rotate(180deg); }
+.notif-sub {
+  list-style: none;
+  margin: 0 0 6px;
+  padding: 2px 10px 2px 28px;
+}
+.notif-sub-item {
+  padding: 8px 10px;
+  border-left: 2px solid #f2d3d4;
+  margin-bottom: 4px;
+}
+.notif-sub-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-dark);
+}
+.notif-sub-meta {
+  font-size: 11.5px;
+  color: var(--text-mid);
+  margin-top: 2px;
+  word-break: break-word;
+}
+.notif-sub-map {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--blue-primary);
+  text-decoration: none;
+}
+.notif-sub-map:hover { text-decoration: underline; }
+.notif-sub-empty {
+  padding: 8px 10px;
+  font-size: 11.5px;
+  color: var(--text-light);
+}
 .notif-item .notif-dot {
   width: 8px;
   height: 8px;
@@ -543,7 +591,22 @@ button, input {
   gap: 22px;
   flex-wrap: wrap;
 }
-.stat { display: flex; flex-direction: column; }
+.stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  /* เป็น <button> แล้ว (กดดูรายการอุปกรณ์) — ล้างหน้าตาปุ่มของเบราว์เซอร์ทิ้ง */
+  background: none;
+  border: none;
+  font-family: inherit;
+  padding: 4px 8px;
+  margin: -4px -8px;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+}
+.stat:hover { background: #f4f5fb; }
+.stat:focus-visible { outline: 2px solid var(--blue-primary); outline-offset: 1px; }
 .stat .stat-label {
   font-size: 10.5px;
   font-weight: 700;
@@ -595,6 +658,7 @@ button, input {
   flex-direction: column;
   overflow: hidden;
 }
+.modal-wide { max-width: 860px; }
 .modal-header {
   display: flex;
   align-items: center;
@@ -666,11 +730,14 @@ button, input {
 
 .device-form {
   display: grid;
-  grid-template-columns: 2fr 1.4fr 1.2fr auto;
+  /* 6 ช่องย่อย: ฟิลด์ปกติกิน 2 ช่อง ฟิลด์ยาว (.wide) กิน 4 ช่อง */
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 14px;
   align-items: end;
 }
-.device-form .field { margin-bottom: 0; }
+.device-form .field { margin-bottom: 0; grid-column: span 2; }
+.device-form .field.wide { grid-column: span 4; }
+.device-form .btn-primary { grid-column: span 2; }
 .device-form .btn-primary { white-space: nowrap; height: 46px; }
 .device-form .login-error { grid-column: 1 / -1; text-align: left; margin: 0; }
 .field-input select {
@@ -684,7 +751,34 @@ button, input {
 }
 @media (max-width: 900px) {
   .device-form { grid-template-columns: 1fr; }
+  .device-form .field,
+  .device-form .field.wide,
+  .device-form .btn-primary { grid-column: auto; }
 }
+
+/* ปุ่มเปิดแผนที่ที่อยู่ท้ายช่องกรอกพิกัด */
+.btn-pin {
+  flex-shrink: 0;
+  background: #fff;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--text-mid);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn-pin:hover { color: var(--blue-primary); border-color: var(--blue-primary); }
+
+.dev-map {
+  color: var(--blue-primary);
+  text-decoration: none;
+  white-space: nowrap;
+  font-size: 12.5px;
+}
+.dev-map:hover { text-decoration: underline; }
 
 .table-wrap { overflow-x: auto; }
 .device-table {
@@ -794,6 +888,61 @@ button, input {
   overflow-x: auto;
   margin: 0;
   white-space: pre;
+}
+
+/* ===================== MAP PICKER ===================== */
+.map-body { position: relative; }
+.map-search {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+  margin-bottom: 10px;
+}
+.map-search .field-input { flex: 1; padding: 8px 12px; }
+.map-search .btn-secondary { padding: 8px 14px; white-space: nowrap; }
+.map-results {
+  list-style: none;
+  margin: -6px 0 10px;
+  padding: 6px;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.map-results[hidden] { display: none; }
+.map-result {
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: var(--text-dark);
+  cursor: pointer;
+}
+.map-result:hover { background: #f4f5fb; }
+.map-result-note {
+  padding: 8px 10px;
+  font-size: 12.5px;
+  color: var(--text-light);
+}
+.map-canvas {
+  height: 420px;
+  border-radius: 10px;
+  border: 1.5px solid var(--border);
+  /* Leaflet วาง pane เป็น absolute — ต้องมี z-index ของตัวเองไม่งั้นทับปุ่มใน modal */
+  z-index: 0;
+}
+.map-coord {
+  margin-top: 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #f4f5fb;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-dark);
+}
+@media (max-width: 768px) {
+  .map-canvas { height: 300px; }
+  .map-search { flex-wrap: wrap; }
 }
 
 /* ===================== RESPONSIVE (MOBILE) ===================== */

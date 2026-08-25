@@ -32,6 +32,80 @@
   }
 
   // ---------------------------------------------------------------
+  // DEVICE HELPERS (ใช้ร่วมกันทั้งหน้า Dashboard และหน้าอุปกรณ์)
+  // ---------------------------------------------------------------
+  const CATEGORY_TITLES = {
+    recorder: "เครื่องบันทึก",
+    camera: "กล้อง CCTV",
+    transmitter: "เครื่องส่ง",
+    receiver: "เครื่องรับ",
+    router: "Router",
+    accesspoint: "Access Point",
+  };
+
+  const STATUS_LABEL = { up: "UP", down: "DOWN", unknown: "ยังไม่รายงาน" };
+
+  const COORD_ERROR = 'จุดพิกัดต้องเป็น "ละติจูด, ลองจิจูด" เช่น 13.736717, 100.523186';
+
+  // status เป็น null = ยังไม่เคยมีรายงานเข้ามา — นับเป็น unknown เหมือนที่เซิร์ฟเวอร์นับ
+  function devStatus(dev) {
+    return dev.status === "up" ? "up" : dev.status === "down" ? "down" : "unknown";
+  }
+
+  function statusBadge(dev) {
+    const s = devStatus(dev);
+    return `<span class="dev-status ${s}">${STATUS_LABEL[s]}</span>`;
+  }
+
+  function hasCoord(dev) {
+    return dev.lat !== null && dev.lat !== undefined && dev.lng !== null && dev.lng !== undefined;
+  }
+
+  function coordText(dev) {
+    return hasCoord(dev) ? `${dev.lat}, ${dev.lng}` : "";
+  }
+
+  // ช่องกรอกพิกัดรับเป็น "lat, lng" ช่องเดียว — คืน null ถ้ารูปแบบไม่ถูก
+  function parseCoordInput(text) {
+    const raw = (text || "").trim();
+    if (!raw) return { lat: "", lng: "" };
+    const parts = raw.split(/[,\s]+/).filter(Boolean);
+    if (parts.length !== 2 || parts.some((n) => n === "" || !isFinite(Number(n)))) return null;
+    return { lat: Number(parts[0]), lng: Number(parts[1]) };
+  }
+
+  function mapsUrl(dev) {
+    return `https://www.google.com/maps?q=${dev.lat},${dev.lng}`;
+  }
+
+  // textContent ทุกช่อง เพราะเป็นข้อมูลที่ผู้ใช้กรอกเอง (กัน XSS)
+  function cell(text, className) {
+    const td = document.createElement("td");
+    td.textContent = text || "-";
+    if (className) td.className = className;
+    return td;
+  }
+
+  // ช่องพิกัดในตาราง: ลิงก์ออก Google Maps เพื่อให้กดนำทางไปหน้างานได้เลย
+  function coordCell(dev) {
+    if (!hasCoord(dev)) return cell("", "dev-seen");
+    const td = document.createElement("td");
+    const a = document.createElement("a");
+    a.className = "dev-map";
+    a.href = mapsUrl(dev);
+    a.target = "_blank";
+    a.rel = "noopener";
+    a.title = coordText(dev);
+    a.innerHTML = `<i class="fa-solid fa-location-dot"></i> แผนที่`;
+    td.appendChild(a);
+    return td;
+  }
+
+  function seenText(dev) {
+    return dev.last_seen ? dev.last_seen.replace("T", " ") : "-";
+  }
+
+  // ---------------------------------------------------------------
   // LOGIN PAGE (index.html)
   // ---------------------------------------------------------------
   const loginForm = $("#loginForm");
@@ -99,6 +173,8 @@
     };
 
     let dashboardData = {};
+    // รายอุปกรณ์จากทะเบียน — ใช้ตอนกดการ์ด/กระดิ่งเพื่อดูว่า down ตัวไหน ที่ไหน
+    let deviceList = [];
     let autoRefreshTimer = null;
     let lastUpdatedAt = null;
 
@@ -133,18 +209,18 @@
           <div class="card-info">
             <div class="card-title">${cat.title}</div>
             <div class="card-stats">
-              <div class="stat up">
+              <button type="button" class="stat up" data-cat="${cat.key}" data-status="up" title="ดูรายการอุปกรณ์">
                 <span class="stat-label">UP</span>
                 <span class="stat-value">${stats.up} ตัว</span>
-              </div>
-              <div class="stat down">
+              </button>
+              <button type="button" class="stat down" data-cat="${cat.key}" data-status="down" title="ดูรายการอุปกรณ์">
                 <span class="stat-label">DOWN</span>
                 <span class="stat-value">${stats.down} ตัว</span>
-              </div>
-              <div class="stat unknown">
+              </button>
+              <button type="button" class="stat unknown" data-cat="${cat.key}" data-status="unknown" title="ดูรายการอุปกรณ์">
                 <span class="stat-label">UNKNOWN</span>
                 <span class="stat-value">${stats.unknown} ตัว</span>
-              </div>
+              </button>
             </div>
           </div>
           <div class="card-icon"><i class="fa-solid ${cat.icon}"></i></div>
@@ -158,8 +234,62 @@
       applySearchFilter();
     }
 
+    // -------- device detail (กดจากการ์ด) --------
+    const detailModal = $("#detailModal");
+
+    function devicesIn(catKey, status) {
+      return deviceList.filter((d) => d.category === catKey && (!status || devStatus(d) === status));
+    }
+
+    // การ์ดถูกวาดใหม่ทุกรอบ refresh — ผูก listener ที่ grid ทีเดียวแทนผูกรายปุ่ม
+    $("#cardsGrid").addEventListener("click", (e) => {
+      const btn = e.target.closest(".stat");
+      if (btn) openDetail(btn.dataset.cat, btn.dataset.status);
+    });
+
+    function openDetail(catKey, status) {
+      const cat = CATEGORIES.find((c) => c.key === catKey);
+      $("#detailTitle").textContent =
+        `${cat ? cat.title : catKey} — ${STATUS_LABEL[status] || "ทั้งหมด"}`;
+
+      const tbody = $("#detailRows");
+      tbody.innerHTML = "";
+      const list = deviceList.length ? devicesIn(catKey, status) : [];
+
+      if (!deviceList.length) {
+        // โหมด API ภายนอก/ตัวอย่าง — มีแต่ยอดรวม ไม่มีข้อมูลรายตัวให้แสดง
+        tbody.innerHTML = `<tr><td colspan="7" class="dev-empty">ตัวเลขชุดนี้ไม่ได้มาจากทะเบียนอุปกรณ์ จึงดูรายตัวไม่ได้ — เพิ่มอุปกรณ์ในหน้า “อุปกรณ์” ก่อน</td></tr>`;
+      } else if (!list.length) {
+        tbody.innerHTML = `<tr><td colspan="7" class="dev-empty">ไม่มีอุปกรณ์ในกลุ่มนี้</td></tr>`;
+      } else {
+        list.forEach((dev) => {
+          const tr = document.createElement("tr");
+          const tdStatus = document.createElement("td");
+          tdStatus.innerHTML = statusBadge(dev);
+          tr.append(
+            cell(dev.id, "dev-id"),
+            cell(dev.name),
+            cell(dev.circuit),
+            cell(dev.ip),
+            coordCell(dev),
+            tdStatus,
+            cell(seenText(dev), "dev-seen"),
+          );
+          tbody.appendChild(tr);
+        });
+      }
+      detailModal.hidden = false;
+    }
+
+    $("#detailClose").addEventListener("click", () => { detailModal.hidden = true; });
+    detailModal.addEventListener("click", (e) => {
+      if (e.target === detailModal) detailModal.hidden = true;
+    });
+
     // -------- notification bell --------
     const notifPanel = $("#notifPanel");
+    // จำว่าหมวดไหนกางอยู่ ไม่งั้นพอ refresh ทุก 15 วิ รายการที่เพิ่งกางจะหุบเอง
+    const notifOpen = new Set();
 
     function renderNotifPanel() {
       const list = $("#notifList");
@@ -171,12 +301,34 @@
       } else {
         downCats.forEach((cat) => {
           const li = document.createElement("li");
-          li.className = "notif-item";
-          li.innerHTML = `
+          li.className = "notif-group";
+
+          const head = document.createElement("button");
+          head.type = "button";
+          head.className = "notif-item";
+          head.innerHTML = `
             <span class="notif-dot"></span>
             <span class="notif-name">${cat.title}</span>
             <span class="notif-count">${dashboardData[cat.key].down} ตัว</span>
+            <i class="fa-solid fa-chevron-down notif-chevron"></i>
           `;
+
+          const sub = document.createElement("ul");
+          sub.className = "notif-sub";
+          const open = notifOpen.has(cat.key);
+          sub.hidden = !open;
+          head.classList.toggle("open", open);
+          if (open) fillNotifSub(sub, cat.key);
+
+          head.addEventListener("click", () => {
+            const nowOpen = !notifOpen.has(cat.key);
+            if (nowOpen) notifOpen.add(cat.key); else notifOpen.delete(cat.key);
+            sub.hidden = !nowOpen;
+            head.classList.toggle("open", nowOpen);
+            if (nowOpen) fillNotifSub(sub, cat.key);
+          });
+
+          li.append(head, sub);
           list.appendChild(li);
         });
       }
@@ -184,6 +336,47 @@
       $("#notifUpdatedAt").textContent = "อัปเดตล่าสุด: " + (lastUpdatedAt
         ? lastUpdatedAt.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })
         : "-");
+    }
+
+    function fillNotifSub(ul, catKey) {
+      ul.innerHTML = "";
+      const list = devicesIn(catKey, "down");
+      if (!list.length) {
+        const li = document.createElement("li");
+        li.className = "notif-sub-empty";
+        li.textContent = "ตัวเลขชุดนี้มาจาก API ภายนอก จึงดูรายตัวไม่ได้";
+        ul.appendChild(li);
+        return;
+      }
+      list.forEach((dev) => {
+        const li = document.createElement("li");
+        li.className = "notif-sub-item";
+
+        const name = document.createElement("div");
+        name.className = "notif-sub-name";
+        name.textContent = `${dev.id} · ${dev.name}`;
+
+        const meta = document.createElement("div");
+        meta.className = "notif-sub-meta";
+        meta.textContent = [
+          dev.circuit ? `วงจร ${dev.circuit}` : "",
+          dev.ip,
+          dev.last_seen ? `ล่าสุด ${seenText(dev)}` : "",
+        ].filter(Boolean).join(" · ") || "ยังไม่มีข้อมูลเพิ่มเติม";
+
+        li.append(name, meta);
+
+        if (hasCoord(dev)) {
+          const a = document.createElement("a");
+          a.className = "notif-sub-map";
+          a.href = mapsUrl(dev);
+          a.target = "_blank";
+          a.rel = "noopener";
+          a.innerHTML = `<i class="fa-solid fa-location-dot"></i> ดูบนแผนที่`;
+          li.appendChild(a);
+        }
+        ul.appendChild(li);
+      });
     }
 
     function closeNotifPanel() {
@@ -366,6 +559,10 @@
         if (!res.ok) throw new Error("HTTP " + res.status);
         const payload = await res.json();
 
+        // ยอดบนการ์ดนับมาจากทะเบียนอุปกรณ์เมื่อ source === "devices" เท่านั้น
+        // โหมดอื่น (API ภายนอก/ตัวอย่าง) มีแต่ยอดรวม จึงไม่มีรายตัวให้กดดู
+        deviceList = payload.source === "devices" ? await fetchDeviceList() : [];
+
         lastUpdatedAt = new Date();
         dashboardData = normalizeData(payload.data);
         renderCards();
@@ -377,6 +574,16 @@
       } catch (err) {
         if (err.message !== "unauthorized") updateApiStatus("error");
         throw err;
+      }
+    }
+
+    async function fetchDeviceList() {
+      try {
+        const res = await api("/api/devices");
+        return res.ok ? (await res.json()).devices : [];
+      } catch (err) {
+        if (err.message === "unauthorized") throw err;
+        return [];   // ดึงรายตัวไม่ได้ก็ยังให้การ์ดแสดงยอดรวมตามปกติ
       }
     }
 
@@ -443,15 +650,6 @@
   }
 
   function initDevices() {
-    const CATEGORY_TITLES = {
-      recorder: "เครื่องบันทึก",
-      camera: "กล้อง CCTV",
-      transmitter: "เครื่องส่ง",
-      receiver: "เครื่องรับ",
-      router: "Router",
-      accesspoint: "Access Point",
-    };
-
     let devices = [];
     let searchQuery = "";
 
@@ -484,18 +682,13 @@
     }).catch(() => {});
 
     // -------- devices table --------
-    function statusBadge(dev) {
-      if (dev.status === "up") return `<span class="dev-status up">UP</span>`;
-      if (dev.status === "down") return `<span class="dev-status down">DOWN</span>`;
-      return `<span class="dev-status unknown">ยังไม่รายงาน</span>`;
-    }
-
     function renderDevices() {
       const tbody = $("#deviceRows");
       tbody.innerHTML = "";
       const filtered = devices.filter((d) =>
         !searchQuery ||
         d.name.toLowerCase().includes(searchQuery) ||
+        (d.circuit || "").toLowerCase().includes(searchQuery) ||
         (CATEGORY_TITLES[d.category] || "").toLowerCase().includes(searchQuery) ||
         (d.ip || "").includes(searchQuery) ||
         d.id === searchQuery
@@ -504,28 +697,15 @@
       filtered.forEach((dev) => {
         const tr = document.createElement("tr");
 
-        const tdId = document.createElement("td");
-        tdId.className = "dev-id";
-        tdId.textContent = dev.id;
-
-        const tdName = document.createElement("td");
-        tdName.textContent = dev.name; // textContent กัน XSS จากชื่อที่ผู้ใช้กรอก
-
-        const tdCat = document.createElement("td");
-        tdCat.textContent = CATEGORY_TITLES[dev.category] || dev.category;
-
-        const tdIp = document.createElement("td");
-        tdIp.textContent = dev.ip || "-";
-
         const tdStatus = document.createElement("td");
         tdStatus.innerHTML = statusBadge(dev);
 
-        const tdSeen = document.createElement("td");
-        tdSeen.className = "dev-seen";
-        tdSeen.textContent = dev.last_seen ? dev.last_seen.replace("T", " ") : "-";
-
         const tdActions = document.createElement("td");
         tdActions.className = "dev-actions";
+        const editBtn = document.createElement("button");
+        editBtn.className = "btn-mini";
+        editBtn.innerHTML = `<i class="fa-solid fa-pen-to-square"></i> แก้ไข`;
+        editBtn.addEventListener("click", () => openEditModal(dev));
         const codeBtn = document.createElement("button");
         codeBtn.className = "btn-mini";
         codeBtn.innerHTML = `<i class="fa-solid fa-code"></i> โค้ด`;
@@ -535,14 +715,24 @@
         delBtn.innerHTML = `<i class="fa-solid fa-trash"></i>`;
         delBtn.title = "ลบอุปกรณ์";
         delBtn.addEventListener("click", () => deleteDevice(dev));
-        tdActions.append(codeBtn, delBtn);
+        tdActions.append(editBtn, codeBtn, delBtn);
 
-        tr.append(tdId, tdName, tdCat, tdIp, tdStatus, tdSeen, tdActions);
+        tr.append(
+          cell(dev.id, "dev-id"),
+          cell(dev.name),
+          cell(dev.circuit),
+          cell(CATEGORY_TITLES[dev.category] || dev.category),
+          cell(dev.ip),
+          coordCell(dev),
+          tdStatus,
+          cell(seenText(dev), "dev-seen"),
+          tdActions,
+        );
         tbody.appendChild(tr);
       });
 
       if (filtered.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="7" class="dev-empty">${devices.length === 0 ? "ยังไม่มีอุปกรณ์ — เพิ่มจากฟอร์มด้านบน" : "ไม่พบอุปกรณ์ที่ค้นหา"}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="9" class="dev-empty">${devices.length === 0 ? "ยังไม่มีอุปกรณ์ — เพิ่มจากฟอร์มด้านบน" : "ไม่พบอุปกรณ์ที่ค้นหา"}</td></tr>`;
       }
       $("#deviceCount").textContent = devices.length;
     }
@@ -568,21 +758,31 @@
       const errEl = $("#deviceError");
       errEl.style.color = "";
       errEl.textContent = "";
+      const coord = parseCoordInput($("#devCoord").value);
+      if (coord === null) {
+        errEl.textContent = COORD_ERROR;
+        return;
+      }
       try {
         const res = await api("/api/devices", {
           method: "POST",
           body: JSON.stringify({
+            id: $("#devId").value.trim(),
             name: $("#devName").value.trim(),
             category: $("#devCategory").value,
+            circuit: $("#devCircuit").value.trim(),
             ip: $("#devIp").value.trim(),
+            lat: coord.lat,
+            lng: coord.lng,
           }),
         });
         const j = await res.json().catch(() => ({}));
         if (res.ok) {
           errEl.style.color = "#22b573";
           errEl.textContent = `เพิ่มแล้ว — ได้เลข ID ${j.id} (กดปุ่มโค้ดในตารางเพื่อ copy ไปใส่ MikroTik)`;
-          $("#devName").value = "";
-          $("#devIp").value = "";
+          ["#devId", "#devName", "#devCircuit", "#devIp", "#devCoord"].forEach((sel) => {
+            $(sel).value = "";
+          });
           await loadDevices();
         } else {
           errEl.textContent = j.error || "เพิ่มไม่สำเร็จ";
@@ -599,6 +799,222 @@
         if (res.ok) loadDevices();
       } catch {}
     }
+
+    // -------- แก้ไขอุปกรณ์ --------
+    const editModal = $("#editModal");
+    let editDev = null;
+
+    function openEditModal(dev) {
+      editDev = dev;
+      $("#editId").value = dev.id;
+      $("#editName").value = dev.name || "";
+      $("#editCategory").value = dev.category;
+      $("#editCircuit").value = dev.circuit || "";
+      $("#editIp").value = dev.ip || "";
+      $("#editCoord").value = coordText(dev);
+      $("#editError").textContent = "";
+      $("#editIdWarn").hidden = true;
+      editModal.hidden = false;
+    }
+
+    function closeEditModal() {
+      editModal.hidden = true;
+      editDev = null;
+    }
+
+    // เปลี่ยนไอดี = สคริปต์ที่วางไว้ใน MikroTik จะยิงมาด้วยเลขเก่า สถานะจะไม่เข้าอีกเลย
+    $("#editId").addEventListener("input", () => {
+      $("#editIdWarn").hidden = !editDev || $("#editId").value.trim() === editDev.id;
+    });
+
+    $("#editSave").addEventListener("click", async () => {
+      if (!editDev) return;
+      const errEl = $("#editError");
+      errEl.textContent = "";
+      const coord = parseCoordInput($("#editCoord").value);
+      if (coord === null) {
+        errEl.textContent = COORD_ERROR;
+        return;
+      }
+      try {
+        const res = await api(`/api/devices/${editDev.id}`, {
+          method: "PUT",
+          body: JSON.stringify({
+            id: $("#editId").value.trim(),
+            name: $("#editName").value.trim(),
+            category: $("#editCategory").value,
+            circuit: $("#editCircuit").value.trim(),
+            ip: $("#editIp").value.trim(),
+            lat: coord.lat,
+            lng: coord.lng,
+          }),
+        });
+        const j = await res.json().catch(() => ({}));
+        if (res.ok) {
+          closeEditModal();
+          await loadDevices();
+        } else {
+          errEl.textContent = j.error || "บันทึกไม่สำเร็จ";
+        }
+      } catch (err) {
+        if (err.message !== "unauthorized") errEl.textContent = "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้";
+      }
+    });
+
+    $("#editClose").addEventListener("click", closeEditModal);
+    $("#editCancel").addEventListener("click", closeEditModal);
+    editModal.addEventListener("click", (e) => {
+      if (e.target === editModal) closeEditModal();
+    });
+
+    // -------- ปักหมุดบนแผนที่ (Leaflet + OpenStreetMap — ฟรี ไม่ต้องมี API key) --------
+    const mapModal = $("#mapModal");
+    let leafletMap = null;
+    let leafletMarker = null;
+    let pinTarget = null;      // ช่องกรอกที่จะเอาพิกัดกลับไปใส่
+
+    document.querySelectorAll("[data-pin]").forEach((btn) => {
+      btn.addEventListener("click", () => openMapPicker($("#" + btn.dataset.pin)));
+    });
+
+    function openMapPicker(input) {
+      pinTarget = input;
+      $("#mapSearch").value = "";
+      $("#mapResults").hidden = true;
+      mapModal.hidden = false;
+
+      if (typeof L === "undefined") {
+        // CDN โดนบล็อกหรือเครื่องนี้ออกเน็ตไม่ได้ — ยังพิมพ์พิกัดลงช่องเองได้
+        $("#mapHint").innerHTML = "<b>โหลดแผนที่ไม่ได้</b> — เครื่องนี้ต่ออินเทอร์เน็ตไม่ได้ หรือ CDN โดนบล็อก พิมพ์พิกัดลงช่องเองได้เลย";
+        $("#mapCoord").textContent = "ยังไม่ได้ปักหมุด";
+        return;
+      }
+      if (!leafletMap) createMap();
+
+      const start = parseCoordInput(input.value);
+      const pinned = start !== null && start.lat !== "";
+      const view = pinned ? [start.lat, start.lng, 17] : defaultView();
+      leafletMap.setView([view[0], view[1]], view[2]);
+      setPin(pinned ? [start.lat, start.lng] : null);
+      // container เพิ่งถูกแสดง Leaflet ยังวัดขนาดเป็น 0 อยู่ ถ้าไม่สั่งวัดใหม่แผนที่จะเพี้ยน
+      setTimeout(() => leafletMap.invalidateSize(), 0);
+    }
+
+    function createMap() {
+      leafletMap = L.map("mapCanvas");
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
+      }).addTo(leafletMap);
+      leafletMap.on("click", (e) => setPin([e.latlng.lat, e.latlng.lng]));
+    }
+
+    function defaultView() {
+      // เริ่มที่อุปกรณ์ตัวแรกที่เคยปักหมุดไว้ — ปกติอยู่พื้นที่เดียวกัน จะได้ไม่ต้องซูมหาใหม่ทุกครั้ง
+      const ref = devices.find(hasCoord);
+      return ref ? [ref.lat, ref.lng, 15] : [13.7563, 100.5018, 6];
+    }
+
+    function setPin(latlng) {
+      if (!latlng) {
+        if (leafletMarker) {
+          leafletMap.removeLayer(leafletMarker);
+          leafletMarker = null;
+        }
+        $("#mapCoord").textContent = "ยังไม่ได้ปักหมุด";
+        return;
+      }
+      if (leafletMarker) {
+        leafletMarker.setLatLng(latlng);
+      } else {
+        leafletMarker = L.marker(latlng, { draggable: true }).addTo(leafletMap);
+        leafletMarker.on("dragend", () => {
+          const p = leafletMarker.getLatLng();
+          showCoord(p.lat, p.lng);
+        });
+      }
+      showCoord(latlng[0], latlng[1]);
+    }
+
+    function showCoord(lat, lng) {
+      $("#mapCoord").textContent = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+    }
+
+    // Nominatim ของ OpenStreetMap — ใช้ฟรี ขอแค่ยิงเท่าที่จำเป็น (เฉพาะตอนกดค้นหา)
+    async function searchPlace() {
+      const q = $("#mapSearch").value.trim();
+      const box = $("#mapResults");
+      if (!q || !leafletMap) return;
+      box.hidden = false;
+      box.innerHTML = `<li class="map-result-note">กำลังค้นหา...</li>`;
+      try {
+        const res = await fetch(
+          "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&accept-language=th&q="
+          + encodeURIComponent(q)
+        );
+        const hits = await res.json();
+        box.innerHTML = "";
+        if (!Array.isArray(hits) || !hits.length) {
+          box.innerHTML = `<li class="map-result-note">ไม่พบสถานที่นี้</li>`;
+          return;
+        }
+        hits.forEach((hit) => {
+          const li = document.createElement("li");
+          li.className = "map-result";
+          li.textContent = hit.display_name;
+          li.addEventListener("click", () => {
+            const lat = Number(hit.lat);
+            const lng = Number(hit.lon);
+            leafletMap.setView([lat, lng], 17);
+            setPin([lat, lng]);
+            box.hidden = true;
+          });
+          box.appendChild(li);
+        });
+      } catch {
+        box.innerHTML = `<li class="map-result-note">ค้นหาไม่สำเร็จ (ต่ออินเทอร์เน็ตไม่ได้)</li>`;
+      }
+    }
+
+    $("#mapSearchBtn").addEventListener("click", searchPlace);
+    $("#mapSearch").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        searchPlace();
+      }
+    });
+
+    $("#mapLocateBtn").addEventListener("click", () => {
+      if (!leafletMap || !navigator.geolocation) return;
+      $("#mapCoord").textContent = "กำลังหาตำแหน่ง...";
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const { latitude, longitude } = pos.coords;
+          leafletMap.setView([latitude, longitude], 17);
+          setPin([latitude, longitude]);
+        },
+        () => {
+          // geolocation ใช้ได้เฉพาะ https หรือ localhost — บน http ในวง LAN เบราว์เซอร์จะปฏิเสธ
+          $("#mapCoord").textContent = "หาตำแหน่งไม่ได้ (ต้องเปิดผ่าน https และอนุญาตให้เข้าถึงตำแหน่ง)";
+        }
+      );
+    });
+
+    function closeMap() {
+      mapModal.hidden = true;
+      pinTarget = null;
+    }
+
+    $("#mapApply").addEventListener("click", () => {
+      const text = $("#mapCoord").textContent;
+      if (pinTarget && parseCoordInput(text)) pinTarget.value = text;
+      closeMap();
+    });
+    $("#mapClose").addEventListener("click", closeMap);
+    $("#mapCancel").addEventListener("click", closeMap);
+    mapModal.addEventListener("click", (e) => {
+      if (e.target === mapModal) closeMap();
+    });
 
     // -------- MikroTik code modal --------
     const codeModal = $("#codeModal");

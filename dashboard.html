@@ -115,6 +115,34 @@
   </div>
 </div>
 
+<!-- ===================== DEVICE DETAIL MODAL ===================== -->
+<div class="modal-overlay" id="detailModal" hidden>
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <h2><i class="fa-solid fa-list-ul"></i> <span id="detailTitle">รายละเอียดอุปกรณ์</span></h2>
+      <button class="modal-close" id="detailClose"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="table-wrap">
+        <table class="device-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>ชื่อ</th>
+              <th>วงจร</th>
+              <th>IP</th>
+              <th>พิกัด</th>
+              <th>สถานะ</th>
+              <th>รายงานล่าสุด</th>
+            </tr>
+          </thead>
+          <tbody id="detailRows"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ===================== SETTINGS / API MODAL ===================== -->
 <div class="modal-overlay" id="settingsModal" hidden>
   <div class="modal">

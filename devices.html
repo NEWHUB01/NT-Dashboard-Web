@@ -17,6 +17,10 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<!-- แผนที่ปักหมุด: Leaflet + OpenStreetMap — ใช้ฟรี ไม่ต้องสมัคร ไม่ต้องมี API key -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"
+      integrity="sha512-Zcn6bjR/8RZbLEpLIeOwNtzREBAJnUKESxces60Mpoj+2okopSAcSUIUOseddDm0cxnGQzxIR7vJgsLZbdLE3w=="
+      crossorigin="anonymous" referrerpolicy="no-referrer" />
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -88,6 +92,13 @@
         <div class="panel-title">เพิ่มอุปกรณ์ใหม่</div>
         <form id="deviceForm" class="device-form">
           <label class="field">
+            <span>หมายเลขไอดี</span>
+            <div class="field-input">
+              <i class="fa-solid fa-hashtag"></i>
+              <input type="text" id="devId" inputmode="numeric" placeholder="เว้นว่าง = ตั้งให้อัตโนมัติ" />
+            </div>
+          </label>
+          <label class="field wide">
             <span>ชื่ออุปกรณ์</span>
             <div class="field-input">
               <i class="fa-solid fa-tag"></i>
@@ -109,12 +120,29 @@
             </div>
           </label>
           <label class="field">
+            <span>หมายเลขวงจร (ไม่บังคับ)</span>
+            <div class="field-input">
+              <i class="fa-solid fa-file-lines"></i>
+              <input type="text" id="devCircuit" placeholder="เช่น 3621J3580" />
+            </div>
+          </label>
+          <label class="field">
             <span>IP Address (ไม่บังคับ)</span>
             <div class="field-input">
               <i class="fa-solid fa-network-wired"></i>
               <input type="text" id="devIp" placeholder="192.168.10.200" />
             </div>
           </label>
+          <div class="field wide">
+            <span>จุดพิกัดของอุปกรณ์ (ไม่บังคับ)</span>
+            <div class="field-input">
+              <i class="fa-solid fa-location-dot"></i>
+              <input type="text" id="devCoord" placeholder="13.736717, 100.523186" />
+              <button type="button" class="btn-pin" data-pin="devCoord">
+                <i class="fa-solid fa-map-location-dot"></i> ปักหมุด
+              </button>
+            </div>
+          </div>
           <button type="submit" class="btn-primary">+ เพิ่มอุปกรณ์</button>
           <p class="login-error" id="deviceError"></p>
         </form>
@@ -129,8 +157,10 @@
               <tr>
                 <th>ID</th>
                 <th>ชื่อ</th>
+                <th>วงจร</th>
                 <th>หมวด</th>
                 <th>IP</th>
+                <th>พิกัด</th>
                 <th>สถานะ</th>
                 <th>รายงานล่าสุด</th>
                 <th></th>
@@ -142,6 +172,109 @@
         <p class="table-hint">เพิ่มอุปกรณ์แล้วกดปุ่ม <b>&lt;/&gt; โค้ด</b> เพื่อ copy สคริปต์ไปวางใน MikroTik → Tools → Netwatch (แท็บ Up และ Down)</p>
       </section>
     </main>
+  </div>
+</div>
+
+<!-- ===================== EDIT DEVICE MODAL ===================== -->
+<div class="modal-overlay" id="editModal" hidden>
+  <div class="modal">
+    <div class="modal-header">
+      <h2><i class="fa-solid fa-pen-to-square"></i> แก้ไขอุปกรณ์</h2>
+      <button class="modal-close" id="editClose"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="modal-body">
+      <label class="field">
+        <span>หมายเลขไอดี</span>
+        <div class="field-input">
+          <i class="fa-solid fa-hashtag"></i>
+          <input type="text" id="editId" inputmode="numeric" />
+        </div>
+      </label>
+      <p class="code-hint" id="editIdWarn" hidden>
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        เปลี่ยนหมายเลขไอดีแล้ว ต้องไปแก้สคริปต์ใน MikroTik ของอุปกรณ์ตัวนี้ตามด้วย ไม่งั้นสถานะจะไม่เข้า
+      </p>
+      <label class="field">
+        <span>ชื่ออุปกรณ์</span>
+        <div class="field-input">
+          <i class="fa-solid fa-tag"></i>
+          <input type="text" id="editName" />
+        </div>
+      </label>
+      <label class="field">
+        <span>หมวดอุปกรณ์</span>
+        <div class="field-input">
+          <i class="fa-solid fa-layer-group"></i>
+          <select id="editCategory">
+            <option value="recorder">เครื่องบันทึก</option>
+            <option value="camera">กล้อง CCTV</option>
+            <option value="transmitter">เครื่องส่ง (เสียงตามสาย)</option>
+            <option value="receiver">เครื่องรับ (ลำโพง)</option>
+            <option value="router">Router (WiFi ชุมชน)</option>
+            <option value="accesspoint">Access Point</option>
+          </select>
+        </div>
+      </label>
+      <label class="field">
+        <span>หมายเลขวงจร</span>
+        <div class="field-input">
+          <i class="fa-solid fa-file-lines"></i>
+          <input type="text" id="editCircuit" />
+        </div>
+      </label>
+      <label class="field">
+        <span>IP Address</span>
+        <div class="field-input">
+          <i class="fa-solid fa-network-wired"></i>
+          <input type="text" id="editIp" />
+        </div>
+      </label>
+      <div class="field">
+        <span>จุดพิกัดของอุปกรณ์</span>
+        <div class="field-input">
+          <i class="fa-solid fa-location-dot"></i>
+          <input type="text" id="editCoord" placeholder="13.736717, 100.523186" />
+          <button type="button" class="btn-pin" data-pin="editCoord">
+            <i class="fa-solid fa-map-location-dot"></i> ปักหมุด
+          </button>
+        </div>
+      </div>
+      <p class="login-error" id="editError"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" id="editCancel">ยกเลิก</button>
+      <button class="btn-primary" id="editSave">บันทึก</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== MAP PICKER MODAL ===================== -->
+<div class="modal-overlay" id="mapModal" hidden>
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <h2><i class="fa-solid fa-map-location-dot"></i> ปักหมุดจุดพิกัดอุปกรณ์</h2>
+      <button class="modal-close" id="mapClose"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="modal-body map-body">
+      <div class="map-search">
+        <div class="field-input">
+          <i class="fa-solid fa-magnifying-glass"></i>
+          <input type="text" id="mapSearch" placeholder="ค้นหาสถานที่ เช่น เทศบาลตำบลบ้านยาง" />
+        </div>
+        <button type="button" class="btn-secondary" id="mapSearchBtn">ค้นหา</button>
+        <button type="button" class="btn-secondary" id="mapLocateBtn" title="ใช้ตำแหน่งปัจจุบันของเครื่องนี้">
+          <i class="fa-solid fa-crosshairs"></i>
+        </button>
+      </div>
+      <ul class="map-results" id="mapResults" hidden></ul>
+      <div id="mapCanvas" class="map-canvas"></div>
+      <p class="code-hint" id="mapHint">คลิกบนแผนที่เพื่อปักหมุด หรือลากหมุดเพื่อปรับตำแหน่ง</p>
+      <div class="map-coord" id="mapCoord">ยังไม่ได้ปักหมุด</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" id="mapCancel">ยกเลิก</button>
+      <button class="btn-primary" id="mapApply">ใช้พิกัดนี้</button>
+    </div>
   </div>
 </div>
 
@@ -182,6 +315,9 @@
   </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"
+        integrity="sha512-BwHfrr4c9kmRkLw6iXFdzcdWV/PGkVgiIyIWLLlTSXzWQzxuSg4DiQUCpauz/EWjgk5TYQqX/kvn9pG1NpYfqg=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <script src="app.js"></script>
 <script>
   if ("serviceWorker" in navigator) {

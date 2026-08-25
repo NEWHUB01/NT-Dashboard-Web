@@ -10,6 +10,7 @@
 import hmac
 import json
 import os
+import re
 import secrets
 import socket
 import sys
@@ -35,6 +36,11 @@ DEVICES_KEY = "ntcctv:devices"
 CONFIG_KEY = "ntcctv:config"
 
 CATEGORY_KEYS = ["recorder", "camera", "transmitter", "receiver", "router", "accesspoint"]
+
+# หมายเลขไอดีอุปกรณ์ที่ผู้ใช้ตั้งเอง — บังคับเป็นตัวเลขล้วน เพราะต้องไปอยู่ใน URL
+# ที่ MikroTik ยิงเข้ามา (?id=359) และตารางหน้าเว็บเรียงลำดับด้วยค่าตัวเลข
+# ห้ามขึ้นต้นด้วย 0 ไม่งั้น "007" กับ "7" จะกลายเป็นคนละอุปกรณ์ทั้งที่ยิงมาเลขเดียวกัน
+DEVICE_ID_RE = re.compile(r"^[1-9][0-9]{0,8}$")
 
 # คำที่ยอมรับได้ในพารามิเตอร์ status ของ Netwatch (MikroTik ส่ง up/down/unknown)
 STATUS_ALIASES = {
@@ -292,6 +298,58 @@ def save_devices(store):
     store_save(DEVICES_KEY, DEVICES_FILE, store)
 
 
+def parse_coord(raw_lat, raw_lng):
+    """จุดพิกัดที่ปักหมุดจากหน้าเว็บ — ต้องมาเป็นคู่เสมอ ถ้าเว้นว่างทั้งคู่คือไม่ระบุ"""
+    s_lat = ("" if raw_lat is None else str(raw_lat)).strip()
+    s_lng = ("" if raw_lng is None else str(raw_lng)).strip()
+    if not s_lat and not s_lng:
+        return None, None
+    try:
+        lat, lng = float(s_lat), float(s_lng)
+    except ValueError:
+        raise ValueError("จุดพิกัดต้องเป็นตัวเลข เช่น 13.736717, 100.523186")
+    if not -90 <= lat <= 90 or not -180 <= lng <= 180:
+        raise ValueError("จุดพิกัดอยู่นอกช่วงที่เป็นไปได้")
+    # 6 ตำแหน่ง = ละเอียดระดับ 0.1 เมตร พอเกินพอสำหรับปักหมุดอุปกรณ์
+    return round(lat, 6), round(lng, 6)
+
+
+def device_fields(data):
+    """ฟิลด์ที่หน้าเว็บแก้ได้ — ใช้ร่วมกันทั้งตอนเพิ่มและตอนแก้ไข
+    คืน (ค่าที่ตรวจแล้ว, ข้อความ error) โดย error เป็น None ถ้าผ่าน"""
+    name = (data.get("name") or "").strip()
+    category = (data.get("category") or "").strip()
+    if not name or category not in CATEGORY_KEYS:
+        return None, "กรุณากรอกชื่อและเลือกหมวดอุปกรณ์"
+    try:
+        lat, lng = parse_coord(data.get("lat"), data.get("lng"))
+    except ValueError as exc:
+        return None, str(exc)
+    return {
+        "name": name,
+        "category": category,
+        "ip": (data.get("ip") or "").strip(),
+        "circuit": (data.get("circuit") or "").strip(),
+        "lat": lat,
+        "lng": lng,
+    }, None
+
+
+def check_new_id(raw, store):
+    """ตรวจหมายเลขไอดีที่ผู้ใช้ตั้งเอง คืน (id, error)"""
+    dev_id = (raw or "").strip()
+    if not DEVICE_ID_RE.match(dev_id):
+        return None, "หมายเลขไอดีต้องเป็นตัวเลขล้วน 1-999999999 (ห้ามขึ้นต้นด้วย 0)"
+    if dev_id in store["devices"]:
+        return None, f"หมายเลขไอดี {dev_id} ถูกใช้กับอุปกรณ์อื่นแล้ว"
+    return dev_id, None
+
+
+def bump_next_id(store, dev_id):
+    """กัน id ที่ระบบแจกอัตโนมัติไปชนกับ id ที่ผู้ใช้ตั้งเองไว้ล่วงหน้า"""
+    store["next_id"] = max(store.get("next_id", 1), int(dev_id) + 1)
+
+
 def push_token():
     """รหัสลับใน URL ที่ MikroTik ต้องแนบมาด้วย (ตั้งผ่าน env var PUSH_TOKEN)
     ถ้าไม่ตั้งไว้ = ใครยิงก็ได้ ซึ่งพอรับได้ในวง LAN ปิด แต่ห้ามใช้แบบนั้นบนอินเทอร์เน็ต"""
@@ -354,7 +412,11 @@ def api_server_info():
 @login_required
 def api_devices():
     store = load_devices()
-    devices = [{"id": k, **v} for k, v in sorted(store["devices"].items(), key=lambda kv: int(kv[0]))]
+    def order(kv):
+        # id ปกติเป็นตัวเลข แต่กันข้อมูลเก่าที่อาจไม่ใช่ ไม่ให้ทั้งหน้าพังเพราะ int() ระเบิด
+        return (0, int(kv[0]), "") if kv[0].isdigit() else (1, 0, kv[0])
+
+    devices = [{"id": k, **v} for k, v in sorted(store["devices"].items(), key=order)]
     return jsonify(devices=devices)
 
 
@@ -362,20 +424,55 @@ def api_devices():
 @login_required
 def api_add_device():
     data = request.get_json(silent=True) or {}
-    name = (data.get("name") or "").strip()
-    category = (data.get("category") or "").strip()
-    ip = (data.get("ip") or "").strip()
-    if not name or category not in CATEGORY_KEYS:
-        return jsonify(error="กรุณากรอกชื่อและเลือกหมวดอุปกรณ์"), 400
+    fields, err = device_fields(data)
+    if err:
+        return jsonify(error=err), 400
     store = load_devices()
-    dev_id = str(store["next_id"])
-    store["next_id"] += 1
-    store["devices"][dev_id] = {
-        "name": name, "category": category, "ip": ip,
-        "status": None, "last_seen": None,
-    }
+
+    raw_id = (data.get("id") or "").strip()
+    if raw_id:                       # ผู้ใช้ตั้งหมายเลขไอดีเอง (ให้ตรงกับทะเบียนที่มีอยู่แล้ว)
+        dev_id, err = check_new_id(raw_id, store)
+        if err:
+            return jsonify(error=err), 400
+    else:                            # เว้นว่าง = ให้ระบบแจกให้
+        dev_id = str(store["next_id"])
+        while dev_id in store["devices"]:
+            store["next_id"] += 1
+            dev_id = str(store["next_id"])
+
+    bump_next_id(store, dev_id)
+    store["devices"][dev_id] = {**fields, "status": None, "last_seen": None}
     save_devices(store)
     return jsonify(ok=True, id=dev_id)
+
+
+@app.put("/api/devices/<dev_id>")
+@login_required
+def api_edit_device(dev_id):
+    """แก้ข้อมูลอุปกรณ์ — สถานะกับเวลารายงานล่าสุดไม่แตะ เพราะเป็นของที่ MikroTik ยิงเข้ามา
+    เปลี่ยนหมายเลขไอดีได้ด้วย แต่ต้องไปแก้สคริปต์ใน MikroTik ตามให้ตรงกัน"""
+    data = request.get_json(silent=True) or {}
+    fields, err = device_fields(data)
+    if err:
+        return jsonify(error=err), 400
+    store = load_devices()
+    dev = store["devices"].get(dev_id)
+    if not dev:
+        return jsonify(error="not found"), 404
+
+    new_id = (data.get("id") or dev_id).strip()
+    if new_id != dev_id:
+        new_id, err = check_new_id(new_id, store)
+        if err:
+            return jsonify(error=err), 400
+
+    dev.update(fields)
+    if new_id != dev_id:
+        del store["devices"][dev_id]
+        store["devices"][new_id] = dev
+        bump_next_id(store, new_id)
+    save_devices(store)
+    return jsonify(ok=True, id=new_id)
 
 
 @app.delete("/api/devices/<dev_id>")
