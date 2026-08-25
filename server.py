@@ -3,8 +3,7 @@
 รัน:  python server.py   (ค่าเริ่มต้น http://127.0.0.1:8000)
 
 - ล็อกอินจริง: ตรวจรหัสผ่านแบบ hash จาก users.json, ออก session cookie (HttpOnly)
-- ซ่อน API: URL/key ของ API จริงเก็บใน config.json ฝั่งเซิร์ฟเวอร์
-  เบราว์เซอร์เรียกแค่ /api/status แล้วเซิร์ฟเวอร์ไปเรียก API ปลายทางแทน (proxy)
+- รับสถานะจาก MikroTik Netwatch ที่ /status/mikrotik.php แล้วเก็บลงทะเบียนอุปกรณ์
 - จัดการผู้ใช้: python manage.py add/passwd/del/list
 """
 import hmac
@@ -14,6 +13,7 @@ import re
 import secrets
 import socket
 import sys
+import time
 
 # คอนโซล Windows บางเครื่องเป็น cp1252 — พิมพ์ข้อความไทยแล้วพัง
 if hasattr(sys.stdout, "reconfigure"):
@@ -147,6 +147,7 @@ def load_config():
 
 def save_config(cfg):
     store_save(CONFIG_KEY, CONFIG_FILE, cfg)
+    _stale_cache["value"] = None   # ให้ instance นี้เห็นค่าใหม่ทันที
 
 
 def lan_ip():
@@ -244,21 +245,6 @@ def api_me():
     return jsonify(user=session["user"])
 
 
-# ---------------- สรุปยอดรายหมวด ----------------
-@app.get("/api/status")
-@login_required
-def api_status():
-    """ยอดรวมรายหมวด นับจากทะเบียนอุปกรณ์ที่ MikroTik รายงานเข้ามา"""
-    limit = stale_limit(load_config())
-    now = datetime.now(timezone.utc)
-    counts = {k: {"up": 0, "down": 0, "unknown": 0} for k in CATEGORY_KEYS}
-    for dev in load_devices()["devices"].values():
-        cat = dev.get("category")
-        if cat in counts:
-            counts[cat][effective_status(dev, limit, now)] += 1
-    return jsonify(data=counts, stale_minutes=limit)
-
-
 # ---------------- device registry + MikroTik Netwatch ----------------
 def load_devices():
     store = store_load(DEVICES_KEY, DEVICES_FILE, {"next_id": 1, "devices": {}})
@@ -277,6 +263,21 @@ def stale_limit(cfg):
         return max(0, int(cfg.get("stale_minutes", DEFAULT_STALE_MINUTES)))
     except (TypeError, ValueError):
         return DEFAULT_STALE_MINUTES
+
+
+# อ่าน config จากที่เก็บทุก request แค่เพื่อเอาเลขตัวเดียว เปลืองโควตา Redis เปล่าๆ
+# (หน้าเว็บถามทุก 15 วินาที) — จำไว้ 60 วินาที แลกกับว่าถ้าแก้ค่าในหน้าตั้งค่า
+# อาจใช้เวลาถึง 1 นาทีจึงมีผลครบทุก instance บน serverless
+CONFIG_TTL = 60
+_stale_cache = {"at": 0.0, "value": None}
+
+
+def stale_limit_cached():
+    now = time.monotonic()
+    if _stale_cache["value"] is None or now - _stale_cache["at"] > CONFIG_TTL:
+        _stale_cache["value"] = stale_limit(load_config())
+        _stale_cache["at"] = now
+    return _stale_cache["value"]
 
 
 def quiet_minutes(dev, now):
@@ -433,7 +434,9 @@ def api_devices():
         # id ปกติเป็นตัวเลข แต่กันข้อมูลเก่าที่อาจไม่ใช่ ไม่ให้ทั้งหน้าพังเพราะ int() ระเบิด
         return (0, int(kv[0]), "") if kv[0].isdigit() else (1, 0, kv[0])
 
-    limit = stale_limit(load_config())
+    # หน้าแผงควบคุมนับยอดรายหมวดเองจากรายการนี้ ไม่ต้องมี endpoint สรุปยอดแยก
+    # (เดิมยิง 2 endpoint ทุกรอบ = อ่านที่เก็บข้อมูล 4 ครั้งต่อ 15 วินาที)
+    limit = stale_limit_cached()
     now = datetime.now(timezone.utc)
     devices = [
         {"id": k, **v, "quiet_min": quiet_minutes(v, now), "stale": is_stale(v, limit, now)}
@@ -511,7 +514,7 @@ def api_del_device(dev_id):
 @app.get("/api/config")
 @login_required
 def api_get_config():
-    return jsonify(staleMinutes=stale_limit(load_config()))
+    return jsonify(staleMinutes=stale_limit(load_config()))   # หน้าตั้งค่าต้องได้ค่าสดเสมอ
 
 
 @app.post("/api/config")

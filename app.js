@@ -577,6 +577,9 @@
     function startAutoRefresh() {
       stopAutoRefresh();
       autoRefreshTimer = setInterval(() => {
+        // แท็บถูกซ่อนอยู่ = ไม่มีใครดู ข้ามรอบนี้ไป เดี๋ยว visibilitychange
+        // ดึงให้เองตอนกลับมา — เปิดทิ้งไว้ทั้งวันจะไม่กินโควตาเลย
+        if (document.hidden) return;
         fetchDashboardData().catch(() => {});
       }, 15000);
     }
@@ -586,18 +589,18 @@
     }
 
     // -------- fetch + aggregation --------
+    // ดึงครั้งเดียวแล้วนับยอดเอง — เดิมยิง /api/status ควบไปด้วยทั้งที่ยอดรวม
+    // คำนวณจากรายตัวได้อยู่แล้ว และยังการันตีว่าเลขบนการ์ดกับรายการที่กดเข้าไปดู
+    // มาจากข้อมูลชุดเดียวกันเสมอ ไม่เหลื่อมกันเหมือนตอนยิงสองครั้งคนละจังหวะ
     async function fetchDashboardData() {
       updateApiStatus("loading");
       try {
-        const res = await api("/api/status");
+        const res = await api("/api/devices");
         if (!res.ok) throw new Error("HTTP " + res.status);
-        const payload = await res.json();
 
-        // ดึงรายตัวมาด้วย เพื่อให้กดการ์ด/กระดิ่งแล้วดูได้ว่าเป็นอุปกรณ์ตัวไหน
-        deviceList = await fetchDeviceList();
-
+        deviceList = (await res.json()).devices;
         lastUpdatedAt = new Date();
-        dashboardData = normalizeData(payload.data);
+        dashboardData = countByCategory(deviceList);
         renderCards();
         updateApiStatus("ok");
       } catch (err) {
@@ -606,25 +609,12 @@
       }
     }
 
-    async function fetchDeviceList() {
-      try {
-        const res = await api("/api/devices");
-        return res.ok ? (await res.json()).devices : [];
-      } catch (err) {
-        if (err.message === "unauthorized") throw err;
-        return [];   // ดึงรายตัวไม่ได้ก็ยังให้การ์ดแสดงยอดรวมตามปกติ
-      }
-    }
-
-    function normalizeData(json) {
+    function countByCategory(list) {
       const result = {};
-      CATEGORIES.forEach((cat) => {
-        const val = (json || {})[cat.key] || {};
-        result[cat.key] = {
-          up: Number(val.up) || 0,
-          down: Number(val.down) || 0,
-          unknown: Number(val.unknown) || 0,
-        };
+      CATEGORIES.forEach((cat) => (result[cat.key] = { up: 0, down: 0, unknown: 0 }));
+      list.forEach((dev) => {
+        const bucket = result[dev.category];
+        if (bucket) bucket[devStatus(dev)]++;
       });
       return result;
     }
@@ -683,59 +673,136 @@
     }).catch(() => {});
 
     // -------- devices table --------
-    function renderDevices() {
-      const tbody = $("#deviceRows");
-      tbody.innerHTML = "";
-      const filtered = devices.filter((d) =>
-        !searchQuery ||
+    // เดิมล้างตารางแล้วสร้างใหม่ทั้งหมดทุกรอบ (900 อุปกรณ์ = 8,100 ช่อง + 2,700 ปุ่ม
+    // พร้อม listener ใช้เวลา ~350 ms ทุก 15 วินาที) ตอนนี้เก็บแถวไว้ใช้ซ้ำ
+    // แล้วแก้เฉพาะช่องที่ค่าเปลี่ยนจริง — ปกติมีแค่สถานะกับเวลาไม่กี่แถว
+    const rowCache = new Map();   // id -> { tr, cells }
+
+    const tbody = $("#deviceRows");
+
+    // ปุ่มในตารางใช้ listener ตัวเดียวที่ tbody แทนผูกทีละปุ่ม
+    tbody.addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-act]");
+      if (!btn) return;
+      const dev = devices.find((d) => d.id === btn.closest("tr").dataset.id);
+      if (!dev) return;
+      if (btn.dataset.act === "edit") openEditModal(dev);
+      else if (btn.dataset.act === "code") openCodeModal(dev);
+      else deleteDevice(dev);
+    });
+
+    function matchesSearch(d) {
+      return !searchQuery ||
         d.name.toLowerCase().includes(searchQuery) ||
         (d.circuit || "").toLowerCase().includes(searchQuery) ||
         (CATEGORY_TITLES[d.category] || "").toLowerCase().includes(searchQuery) ||
         (d.ip || "").includes(searchQuery) ||
-        d.id === searchQuery
-      );
+        d.id === searchQuery;
+    }
 
-      filtered.forEach((dev) => {
-        const tr = document.createElement("tr");
+    function createRow() {
+      const tr = document.createElement("tr");
+      const cells = {};
+      [["id", "dev-id"], ["name", ""], ["circuit", ""], ["category", ""],
+       ["ip", ""], ["coord", ""], ["status", ""], ["seen", "dev-seen"]]
+        .forEach(([key, cls]) => {
+          const td = document.createElement("td");
+          if (cls) td.className = cls;
+          cells[key] = td;
+          tr.appendChild(td);
+        });
 
-        const tdStatus = document.createElement("td");
-        tdStatus.innerHTML = statusBadge(dev);
+      const actions = document.createElement("td");
+      actions.className = "dev-actions";
+      actions.innerHTML =
+        `<button class="btn-mini" data-act="edit"><i class="fa-solid fa-pen-to-square"></i> แก้ไข</button>`
+        + `<button class="btn-mini" data-act="code"><i class="fa-solid fa-code"></i> โค้ด</button>`
+        + `<button class="btn-mini danger" data-act="del" title="ลบอุปกรณ์"><i class="fa-solid fa-trash"></i></button>`;
+      tr.appendChild(actions);
+      return { tr, cells };
+    }
 
-        const tdActions = document.createElement("td");
-        tdActions.className = "dev-actions";
-        const editBtn = document.createElement("button");
-        editBtn.className = "btn-mini";
-        editBtn.innerHTML = `<i class="fa-solid fa-pen-to-square"></i> แก้ไข`;
-        editBtn.addEventListener("click", () => openEditModal(dev));
-        const codeBtn = document.createElement("button");
-        codeBtn.className = "btn-mini";
-        codeBtn.innerHTML = `<i class="fa-solid fa-code"></i> โค้ด`;
-        codeBtn.addEventListener("click", () => openCodeModal(dev));
-        const delBtn = document.createElement("button");
-        delBtn.className = "btn-mini danger";
-        delBtn.innerHTML = `<i class="fa-solid fa-trash"></i>`;
-        delBtn.title = "ลบอุปกรณ์";
-        delBtn.addEventListener("click", () => deleteDevice(dev));
-        tdActions.append(editBtn, codeBtn, delBtn);
+    function setText(td, value) {
+      const text = value || "-";
+      if (td.textContent !== text) td.textContent = text;   // แตะ DOM เฉพาะตอนค่าเปลี่ยน
+    }
 
-        tr.append(
-          cell(dev.id, "dev-id"),
-          cell(dev.name),
-          cell(dev.circuit),
-          cell(CATEGORY_TITLES[dev.category] || dev.category),
-          cell(dev.ip),
-          coordCell(dev),
-          tdStatus,
-          seenCell(dev),
-          tdActions,
-        );
-        tbody.appendChild(tr);
+    // ช่องที่มี element ข้างใน เทียบด้วยลายเซ็นสั้นๆ แล้วสร้างใหม่เฉพาะตอนต่างจริง
+    function setRich(td, signature, build) {
+      if (td.dataset.sig === signature) return;
+      td.dataset.sig = signature;
+      td.textContent = "";
+      build(td);
+    }
+
+    function updateRow(row, dev) {
+      // setAttribute ด้วยค่าเดิมก็ยังนับเป็นการแก้ DOM — เช็คก่อนเขียนทุกที่
+      if (row.tr.dataset.id !== dev.id) row.tr.dataset.id = dev.id;
+      setText(row.cells.id, dev.id);
+      setText(row.cells.name, dev.name);
+      setText(row.cells.circuit, dev.circuit);
+      setText(row.cells.category, CATEGORY_TITLES[dev.category] || dev.category);
+      setText(row.cells.ip, dev.ip);
+
+      setRich(row.cells.coord, `${dev.lat},${dev.lng}`, (td) => {
+        td.className = hasCoord(dev) ? "" : "dev-muted";
+        if (!hasCoord(dev)) { td.textContent = "-"; return; }
+        const a = document.createElement("a");
+        a.className = "dev-map";
+        a.href = mapsUrl(dev);
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.title = coordText(dev);
+        a.innerHTML = `<i class="fa-solid fa-location-dot"></i> แผนที่`;
+        td.appendChild(a);
       });
 
-      if (filtered.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="9" class="dev-empty">${devices.length === 0 ? "ยังไม่มีอุปกรณ์ — เพิ่มจากฟอร์มด้านบน" : "ไม่พบอุปกรณ์ที่ค้นหา"}</td></tr>`;
-      }
+      setRich(row.cells.status, `${rawStatus(dev)}|${!!dev.stale}|${dev.quiet_min}`,
+        (td) => { td.innerHTML = statusBadge(dev); });
+
+      setRich(row.cells.seen, `${dev.last_seen}|${dev.quiet_min}|${!!dev.stale}`, (td) => {
+        if (!dev.last_seen) { td.textContent = "-"; return; }
+        td.textContent = seenText(dev);
+        const quiet = quietText(dev);
+        if (!quiet) return;
+        const note = document.createElement("div");
+        note.className = "dev-quiet" + (isStale(dev) ? " stale" : "");
+        note.textContent = quiet;
+        td.appendChild(note);
+      });
+    }
+
+    function renderDevices() {
+      const filtered = devices.filter(matchesSearch);
       $("#deviceCount").textContent = devices.length;
+
+      if (!filtered.length) {
+        rowCache.clear();
+        tbody.innerHTML = `<tr><td colspan="9" class="dev-empty">${devices.length === 0 ? "ยังไม่มีอุปกรณ์ — เพิ่มจากฟอร์มด้านบน" : "ไม่พบอุปกรณ์ที่ค้นหา"}</td></tr>`;
+        return;
+      }
+
+      const empty = tbody.querySelector(".dev-empty");
+      if (empty) empty.closest("tr").remove();
+
+      // เอาแถวที่หลุดจากผลกรอง (หรือถูกลบไปแล้ว) ออกก่อน
+      const wanted = new Set(filtered.map((d) => d.id));
+      rowCache.forEach((row, id) => {
+        if (!wanted.has(id)) {
+          row.tr.remove();
+          rowCache.delete(id);
+        }
+      });
+
+      filtered.forEach((dev, i) => {
+        let row = rowCache.get(dev.id);
+        if (!row) {
+          row = createRow();
+          rowCache.set(dev.id, row);
+        }
+        updateRow(row, dev);
+        if (tbody.children[i] !== row.tr) tbody.insertBefore(row.tr, tbody.children[i] || null);
+      });
     }
 
     async function loadDevices() {
@@ -897,27 +964,73 @@
     });
 
     // -------- ปักหมุดบนแผนที่ (Leaflet + OpenStreetMap — ฟรี ไม่ต้องมี API key) --------
+    const LEAFLET_BASE = "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/";
+    const LEAFLET_CSS_SRI = "sha512-Zcn6bjR/8RZbLEpLIeOwNtzREBAJnUKESxces60Mpoj+2okopSAcSUIUOseddDm0cxnGQzxIR7vJgsLZbdLE3w==";
+    const LEAFLET_JS_SRI = "sha512-BwHfrr4c9kmRkLw6iXFdzcdWV/PGkVgiIyIWLLlTSXzWQzxuSg4DiQUCpauz/EWjgk5TYQqX/kvn9pG1NpYfqg==";
+
     const mapModal = $("#mapModal");
     let leafletMap = null;
     let leafletMarker = null;
     let pinTarget = null;      // ช่องกรอกที่จะเอาพิกัดกลับไปใส่
+    let leafletLoading = null;
+
+    // คนส่วนใหญ่เข้าหน้านี้เพื่อดูตาราง ไม่ได้เปิดแผนที่ — ไม่ต้องโหลด 36 KB
+    // ติดมาทุกครั้งที่เปิดหน้า รอจนกดปักหมุดครั้งแรกค่อยโหลด
+    function loadLeaflet() {
+      if (window.L) return Promise.resolve();
+      if (leafletLoading) return leafletLoading;
+
+      leafletLoading = new Promise((resolve, reject) => {
+        const css = document.createElement("link");
+        css.rel = "stylesheet";
+        css.href = LEAFLET_BASE + "leaflet.css";
+        css.integrity = LEAFLET_CSS_SRI;
+        css.crossOrigin = "anonymous";
+        css.referrerPolicy = "no-referrer";
+        document.head.appendChild(css);
+
+        const js = document.createElement("script");
+        js.src = LEAFLET_BASE + "leaflet.js";
+        js.integrity = LEAFLET_JS_SRI;
+        js.crossOrigin = "anonymous";
+        js.referrerPolicy = "no-referrer";
+        js.onload = () => {
+          // ปกติ Leaflet เดาที่อยู่รูปหมุดจาก <link> ของ leaflet.css ที่อยู่ในหน้า
+          // แต่เราใส่ทีหลังตอนรันไทม์ จึงบอกตรงๆ ไปเลยจะชัวร์กว่า
+          window.L.Icon.Default.imagePath = LEAFLET_BASE + "images/";
+          resolve();
+        };
+        js.onerror = () => {
+          leafletLoading = null;   // ให้ลองใหม่ได้ถ้าเน็ตกลับมา
+          reject(new Error("leaflet"));
+        };
+        document.head.appendChild(js);
+      });
+      return leafletLoading;
+    }
 
     document.querySelectorAll("[data-pin]").forEach((btn) => {
       btn.addEventListener("click", () => openMapPicker($("#" + btn.dataset.pin)));
     });
 
-    function openMapPicker(input) {
+    async function openMapPicker(input) {
       pinTarget = input;
       $("#mapSearch").value = "";
       $("#mapResults").hidden = true;
       mapModal.hidden = false;
+      $("#mapCoord").textContent = "ยังไม่ได้ปักหมุด";
+      $("#mapHint").textContent = "กำลังโหลดแผนที่...";
 
-      if (typeof L === "undefined") {
+      try {
+        await loadLeaflet();
+      } catch {
         // CDN โดนบล็อกหรือเครื่องนี้ออกเน็ตไม่ได้ — ยังพิมพ์พิกัดลงช่องเองได้
         $("#mapHint").innerHTML = "<b>โหลดแผนที่ไม่ได้</b> — เครื่องนี้ต่ออินเทอร์เน็ตไม่ได้ หรือ CDN โดนบล็อก พิมพ์พิกัดลงช่องเองได้เลย";
-        $("#mapCoord").textContent = "ยังไม่ได้ปักหมุด";
         return;
       }
+      if (mapModal.hidden) return;   // ผู้ใช้ปิดไปแล้วระหว่างรอโหลด
+
+      $("#mapHint").textContent = "คลิกบนแผนที่เพื่อปักหมุด หรือลากหมุดเพื่อปรับตำแหน่ง";
       if (!leafletMap) createMap();
 
       const start = parseCoordInput(input.value);
@@ -1154,7 +1267,10 @@
 
     function startPolling() {
       if (pollTimer) clearInterval(pollTimer);
-      pollTimer = autoRefreshOn() ? setInterval(loadDevices, 15000) : null;
+      pollTimer = autoRefreshOn() ? setInterval(() => {
+        if (document.hidden) return;   // ไม่มีใครดูก็ไม่ต้องยิง
+        loadDevices();
+      }, 15000) : null;
     }
 
     // กด Esc ปิดหน้าต่างที่เปิดอยู่ ทีละชั้นจากอันบนสุด (แผนที่เปิดทับหน้าต่างแก้ไขได้)
