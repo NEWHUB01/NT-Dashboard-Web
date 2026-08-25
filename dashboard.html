@@ -170,6 +170,31 @@
         <span>ดึงข้อมูลอัตโนมัติทุก 15 วินาที</span>
       </label>
 
+      <div class="settings-section">
+        <div class="settings-section-title">สำรองข้อมูล</div>
+        <p class="code-hint">
+          ทะเบียนอุปกรณ์เก็บอยู่ที่เดียว ถ้าหายต้องกรอกใหม่ทั้งหมดพร้อมพิกัด
+          — ดาวน์โหลดเก็บไว้เป็นระยะ โดยเฉพาะหลังเพิ่มหรือแก้ไขอุปกรณ์
+        </p>
+        <div class="settings-actions">
+          <button type="button" class="btn-secondary" id="backupBtn">
+            <i class="fa-solid fa-download"></i> ดาวน์โหลดไฟล์สำรอง
+          </button>
+          <button type="button" class="btn-secondary" id="restoreBtn">
+            <i class="fa-solid fa-upload"></i> กู้คืนจากไฟล์
+          </button>
+          <input type="file" id="restoreFile" accept=".json,application/json" hidden />
+        </div>
+        <div class="restore-confirm" id="restoreConfirm" hidden>
+          <div id="restoreSummary"></div>
+          <div class="settings-actions">
+            <button type="button" class="btn-secondary" id="restoreCancel">ยกเลิก</button>
+            <button type="button" class="btn-danger" id="restoreGo">ยืนยันกู้คืน</button>
+          </div>
+        </div>
+        <p class="login-error" id="backupMsg"></p>
+      </div>
+
       <p class="login-error" id="settingsError"></p>
     </div>
 

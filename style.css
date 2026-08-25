@@ -935,6 +935,41 @@ button, input {
   color: #17734b;
 }
 
+/* ===================== สำรองข้อมูลในหน้าตั้งค่า ===================== */
+.settings-section {
+  border-top: 1px solid var(--border);
+  margin-top: 18px;
+  padding-top: 16px;
+}
+.settings-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-dark);
+  margin-bottom: 6px;
+}
+.settings-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.settings-actions .btn-secondary,
+.settings-actions .btn-danger {
+  padding: 9px 14px;
+  font-size: 13px;
+}
+.restore-confirm {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1.5px solid #f6cfd0;
+  background: #fdeaea;
+  border-radius: 10px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-dark);
+}
+.restore-confirm[hidden] { display: none; }
+
 .code-block-head[hidden] {
   display: none;   /* display:flex ข้างล่างจะชนะ [hidden] ของเบราว์เซอร์ ถ้าไม่เขียนบรรทัดนี้ */
 }

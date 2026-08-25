@@ -23,7 +23,7 @@ from functools import wraps
 from pathlib import Path
 
 import requests
-from flask import Flask, abort, jsonify, request, send_from_directory, session
+from flask import Flask, Response, abort, jsonify, request, send_from_directory, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
 BASE = Path(__file__).resolve().parent
@@ -594,6 +594,75 @@ def api_del_device(dev_id):
     del store["devices"][dev_id]
     save_devices(store)
     return jsonify(ok=True)
+
+
+@app.get("/api/devices/export")
+@login_required
+def api_export_devices():
+    """ไฟล์สำรองทะเบียนอุปกรณ์ — ข้อมูลชุดนี้อยู่ที่เดียว ถ้าหายแล้วต้องกรอกใหม่ทั้งหมด
+    พร้อมพิกัด จึงควรโหลดเก็บไว้เป็นระยะ"""
+    store = load_devices()
+    payload = {
+        "app": "nt-cctv-dashboard",
+        "version": 1,
+        "exported_at": now_stamp(),
+        "next_id": store.get("next_id", 1),
+        "devices": store.get("devices", {}),
+    }
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M")
+    return Response(
+        json.dumps(payload, indent=2, ensure_ascii=False),
+        mimetype="application/json",
+        headers={
+            "Content-Disposition": f'attachment; filename="nt-cctv-devices-{stamp}.json"',
+        },
+    )
+
+
+@app.post("/api/devices/import")
+@login_required
+def api_import_devices():
+    """กู้คืนจากไฟล์สำรอง — แทนที่ทะเบียนเดิมทั้งหมด
+
+    ตรวจทุกตัวให้ผ่านก่อนแล้วค่อยเขียน ถ้ามีรายการไหนพังจะไม่แตะข้อมูลเดิมเลย
+    ดีกว่ากู้คืนไปได้ครึ่งเดียวแล้วเหลือทะเบียนที่ไม่ครบทั้งสองฝั่ง
+    """
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify(error="อ่านไฟล์ไม่ได้ — ต้องเป็นไฟล์สำรองที่ดาวน์โหลดจากระบบนี้"), 400
+    raw_devices = data.get("devices")
+    if not isinstance(raw_devices, dict):
+        return jsonify(error="ไฟล์นี้ไม่มีรายการอุปกรณ์ (ไม่พบส่วน devices)"), 400
+
+    cleaned = {}
+    for dev_id, dev in raw_devices.items():
+        dev_id = str(dev_id)
+        if not DEVICE_ID_RE.match(dev_id):
+            return jsonify(error=f"หมายเลขไอดี '{dev_id}' ในไฟล์ไม่ถูกต้อง"), 400
+        if not isinstance(dev, dict):
+            return jsonify(error=f"ข้อมูลอุปกรณ์ id {dev_id} ในไฟล์เสียหาย"), 400
+        fields, err = device_fields(dev)
+        if err:
+            return jsonify(error=f"อุปกรณ์ id {dev_id}: {err}"), 400
+        status = dev.get("status")
+        last_seen = dev.get("last_seen")
+        cleaned[dev_id] = {
+            **fields,
+            "status": status if status in ("up", "down") else None,
+            "last_seen": last_seen if isinstance(last_seen, str) else None,
+        }
+
+    next_id = 1
+    for dev_id in cleaned:
+        next_id = max(next_id, int(dev_id) + 1)
+    try:                       # เผื่อไฟล์เก็บ next_id ที่สูงกว่าไอดีที่มีอยู่จริง
+        next_id = max(next_id, int(data.get("next_id", 1)))
+    except (TypeError, ValueError):
+        pass
+
+    save_devices({"next_id": next_id, "devices": cleaned})
+    print(f"* กู้คืนทะเบียนอุปกรณ์ {len(cleaned)} ตัว", flush=True)
+    return jsonify(ok=True, count=len(cleaned))
 
 
 @app.get("/api/config")

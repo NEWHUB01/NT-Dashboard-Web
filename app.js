@@ -168,6 +168,7 @@
 
     async function open() {
       $("#settingsError").textContent = "";
+      resetRestore();
       $("#staleMinutes").value = "";
       $("#autoRefresh").checked = autoRefreshOn();
       modal.hidden = false;
@@ -213,6 +214,98 @@
         if (err.message !== "unauthorized") {
           errEl.textContent = "บันทึกค่าไว้แล้ว แต่ดึงข้อมูลไม่สำเร็จ";
         }
+      }
+    });
+
+    // -------- สำรอง / กู้คืนทะเบียนอุปกรณ์ --------
+    let restorePayload = null;
+
+    function resetRestore() {
+      restorePayload = null;
+      $("#restoreConfirm").hidden = true;
+      $("#backupMsg").textContent = "";
+      $("#backupMsg").style.color = "";
+    }
+
+    $("#backupBtn").addEventListener("click", async () => {
+      const msg = $("#backupMsg");
+      msg.style.color = "";
+      msg.textContent = "กำลังเตรียมไฟล์...";
+      try {
+        const res = await api("/api/devices/export");
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `nt-cctv-devices-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        msg.style.color = "#22b573";
+        msg.textContent = "ดาวน์โหลดแล้ว";
+      } catch (err) {
+        if (err.message !== "unauthorized") msg.textContent = "ดาวน์โหลดไม่สำเร็จ";
+      }
+    });
+
+    $("#restoreBtn").addEventListener("click", () => $("#restoreFile").click());
+
+    $("#restoreFile").addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+      e.target.value = "";        // ให้เลือกไฟล์เดิมซ้ำได้
+      if (!file) return;
+      const msg = $("#backupMsg");
+      msg.style.color = "";
+      msg.textContent = "";
+      try {
+        const data = JSON.parse(await file.text());
+        const count = data && data.devices ? Object.keys(data.devices).length : 0;
+        if (!count) throw new Error("empty");
+        restorePayload = data;
+
+        // ชื่อไฟล์มาจากผู้ใช้ ใส่ผ่าน textContent ไม่ใช่ innerHTML
+        const summary = $("#restoreSummary");
+        summary.textContent = "";
+        const line = document.createElement("div");
+        line.textContent = `ไฟล์ ${file.name} มีอุปกรณ์ ${count} ตัว`;
+        const warn = document.createElement("div");
+        warn.innerHTML = "กู้คืนแล้ว <b>ทะเบียนปัจจุบันจะถูกแทนที่ทั้งหมด</b> และย้อนกลับไม่ได้";
+        summary.append(line, warn);
+        $("#restoreConfirm").hidden = false;
+      } catch {
+        restorePayload = null;
+        $("#restoreConfirm").hidden = true;
+        msg.textContent = "อ่านไฟล์ไม่ได้ — ต้องเป็นไฟล์สำรองที่ดาวน์โหลดจากระบบนี้";
+      }
+    });
+
+    $("#restoreCancel").addEventListener("click", resetRestore);
+
+    $("#restoreGo").addEventListener("click", async () => {
+      if (!restorePayload) return;
+      const payload = restorePayload;
+      const msg = $("#backupMsg");
+      restorePayload = null;
+      $("#restoreConfirm").hidden = true;
+      msg.style.color = "";
+      msg.textContent = "กำลังกู้คืน...";
+      try {
+        const res = await api("/api/devices/import", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        const j = await res.json().catch(() => ({}));
+        if (res.ok) {
+          msg.style.color = "#22b573";
+          msg.textContent = `กู้คืนแล้ว ${j.count} อุปกรณ์`;
+          await applyChanges();
+        } else {
+          msg.textContent = j.error || "กู้คืนไม่สำเร็จ";
+        }
+      } catch (err) {
+        if (err.message !== "unauthorized") msg.textContent = "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้";
       }
     });
 
