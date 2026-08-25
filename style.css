@@ -551,29 +551,22 @@ button, input {
   font-size: 26px;
   margin: 0;
 }
+/* แถบเตือนตอนดึงข้อมูลจากเซิร์ฟเวอร์ไม่ได้ — ปกติซ่อนอยู่ */
+.api-status[hidden] {
+  display: none;   /* display:flex ข้างล่างจะชนะ [hidden] ของเบราว์เซอร์ ถ้าไม่เขียนบรรทัดนี้ */
+}
 .api-status {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  color: var(--text-mid);
-  background: #fff;
-  border: 1.5px solid var(--border);
+  color: var(--red);
+  background: #fdeaea;
+  border: 1.5px solid #f6cfd0;
   padding: 7px 14px;
   border-radius: 20px;
-  cursor: pointer;
 }
 .api-status i { font-size: 8px; color: var(--red); }
-.api-status.connected i { color: var(--green); }
-.api-status.error i { color: var(--red); }
-.api-status.loading i {
-  color: var(--orange);
-  animation: pulse 1s ease-in-out infinite;
-}
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: .3; }
-}
 
 .cards-grid {
   display: grid;

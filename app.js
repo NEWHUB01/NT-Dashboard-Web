@@ -513,27 +513,23 @@
       e.preventDefault();
       openSettings();
     });
-    $("#apiStatus").addEventListener("click", openSettings);
     $("#settingsClose").addEventListener("click", closeSettings);
     $("#settingsCancel").addEventListener("click", closeSettings);
     settingsModal.addEventListener("click", (e) => {
       if (e.target === settingsModal) closeSettings();
     });
 
+    // โชว์เฉพาะตอนมีปัญหา — แถบที่เขียวตลอดคนจะเลิกมองมันไปเอง และตอนนี้ข้อมูล
+    // มาทางเดียวคือ MikroTik จึงไม่มีอะไรต้องบอกเวลาทุกอย่างปกติ
     function updateApiStatus(mode) {
       // mode: "ok" | "loading" | "error"
       const el = $("#apiStatus");
-      el.classList.remove("connected", "loading", "error");
-      if (mode === "ok") {
-        el.classList.add("connected");
-        el.querySelector("span").textContent = "รับสถานะจากอุปกรณ์ (MikroTik Netwatch)";
-      } else if (mode === "loading") {
-        el.classList.add("loading");
-        el.querySelector("span").textContent = "กำลังดึงข้อมูล...";
-      } else {
-        el.classList.add("error");
-        el.querySelector("span").textContent = "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้";
+      if (mode !== "error") {
+        el.hidden = true;
+        return;
       }
+      el.querySelector("span").textContent = "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ — ตัวเลขที่เห็นอาจไม่ใช่ล่าสุด";
+      el.hidden = false;
     }
 
     function startAutoRefresh() {
