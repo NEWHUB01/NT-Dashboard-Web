@@ -102,9 +102,9 @@
     <main class="content">
       <div class="content-head">
         <h1>Dashboard</h1>
-        <div class="api-status demo" id="apiStatus">
+        <div class="api-status loading" id="apiStatus">
           <i class="fa-solid fa-circle"></i>
-          <span>แสดงข้อมูลตัวอย่าง (ยังไม่ได้ตั้งค่า API)</span>
+          <span>กำลังดึงข้อมูล...</span>
         </div>
       </div>
 
@@ -143,31 +143,15 @@
   </div>
 </div>
 
-<!-- ===================== SETTINGS / API MODAL ===================== -->
+<!-- ===================== SETTINGS MODAL ===================== -->
 <div class="modal-overlay" id="settingsModal" hidden>
   <div class="modal">
     <div class="modal-header">
-      <h2><i class="fa-solid fa-gear"></i> ตั้งค่าการเชื่อมต่อ API</h2>
+      <h2><i class="fa-solid fa-gear"></i> การตั้งค่า</h2>
       <button class="modal-close" id="settingsClose"><i class="fa-solid fa-xmark"></i></button>
     </div>
 
     <div class="modal-body">
-      <label class="field">
-        <span>API Endpoint URL</span>
-        <div class="field-input">
-          <i class="fa-solid fa-link"></i>
-          <input type="text" id="apiUrl" placeholder="https://example.com/api/status" />
-        </div>
-      </label>
-
-      <label class="field">
-        <span>API Key / Bearer Token (เก็บบนเซิร์ฟเวอร์ — F12 มองไม่เห็น)</span>
-        <div class="field-input">
-          <i class="fa-solid fa-key"></i>
-          <input type="text" id="apiKey" placeholder="ไม่บังคับ" />
-        </div>
-      </label>
-
       <label class="field">
         <span>ถือว่า "ขาดการติดต่อ" เมื่อไม่มีรายงานเข้ามาเกิน (นาที)</span>
         <div class="field-input">
@@ -186,31 +170,12 @@
         <span>ดึงข้อมูลอัตโนมัติทุก 15 วินาที</span>
       </label>
 
-      <div class="schema-hint">
-        <p><strong>รูปแบบข้อมูลที่รองรับ</strong> — API ควรตอบกลับ JSON แบบใดแบบหนึ่งต่อไปนี้:</p>
-        <p class="schema-title">1) แบบสรุปยอดแล้ว</p>
-        <pre>{
-  "recorder":    {"up":33,"down":0,"unknown":0},
-  "camera":      {"up":707,"down":12,"unknown":0},
-  "transmitter": {"up":0,"down":0,"unknown":0},
-  "receiver":    {"up":0,"down":0,"unknown":0},
-  "router":      {"up":6,"down":0,"unknown":0},
-  "accesspoint": {"up":126,"down":1,"unknown":0}
-}</pre>
-        <p class="schema-title">2) แบบรายอุปกรณ์ (ระบบจะนับให้อัตโนมัติ)</p>
-        <pre>[
-  {"category":"camera","status":"up"},
-  {"category":"router","status":"down"},
-  ...
-]</pre>
-      </div>
-
-      <p class="login-error" id="apiError"></p>
+      <p class="login-error" id="settingsError"></p>
     </div>
 
     <div class="modal-footer">
-      <button class="btn-secondary" id="apiTestBtn">ทดสอบเชื่อมต่อ</button>
-      <button class="btn-primary" id="apiSaveBtn">บันทึก &amp; ดึงข้อมูล</button>
+      <button class="btn-secondary" id="settingsCancel">ยกเลิก</button>
+      <button class="btn-primary" id="settingsSave">บันทึก</button>
     </div>
   </div>
 </div>

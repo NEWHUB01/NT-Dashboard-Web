@@ -100,6 +100,9 @@ button, input {
   outline: none;
   background: transparent;
   flex: 1;
+  /* flex item ย่อต่ำกว่าความกว้างของ placeholder ตัวเองไม่ได้ถ้าไม่เขียนบรรทัดนี้
+     ทำให้ทั้งช่องดันกว้างเกินกรอบบนจอแคบ */
+  min-width: 0;
   font-size: 14px;
   color: var(--text-dark);
 }
@@ -139,6 +142,20 @@ button, input {
   cursor: pointer;
 }
 .btn-secondary:hover { background: #f6f6fb; }
+
+.btn-danger {
+  background: var(--red);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 12px 18px;
+  font-size: 14.5px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background .15s;
+}
+.btn-danger:hover { background: #cf3b40; }
 
 .login-error {
   color: var(--red);
@@ -548,7 +565,6 @@ button, input {
 }
 .api-status i { font-size: 8px; color: var(--red); }
 .api-status.connected i { color: var(--green); }
-.api-status.demo i { color: var(--orange); }
 .api-status.error i { color: var(--red); }
 .api-status.loading i {
   color: var(--orange);
@@ -662,6 +678,57 @@ button, input {
   overflow: hidden;
 }
 .modal-wide { max-width: 860px; }
+.modal-sm { max-width: 420px; }
+
+/* กล่องยืนยันก่อนลบ — แทน confirm() ของเบราว์เซอร์ที่หน้าตาไม่เข้ากับที่เหลือ */
+.confirm-body { text-align: center; }
+.confirm-icon {
+  width: 56px;
+  height: 56px;
+  margin: 2px auto 14px;
+  border-radius: 50%;
+  background: #fdeaea;
+  color: var(--red);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 21px;
+}
+.confirm-lead {
+  margin: 0 0 14px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-dark);
+}
+.confirm-card {
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  background: #fbfbfe;
+  padding: 12px 14px;
+  text-align: left;
+}
+.confirm-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-dark);
+  word-break: break-word;
+}
+.confirm-meta {
+  font-size: 12.5px;
+  color: var(--text-mid);
+  margin-top: 3px;
+  word-break: break-word;
+}
+.confirm-note {
+  display: flex;
+  gap: 8px;
+  text-align: left;
+  margin: 14px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-mid);
+}
+.confirm-note i { color: var(--orange); margin-top: 3px; }
 .modal-header {
   display: flex;
   align-items: center;
@@ -693,27 +760,6 @@ button, input {
   gap: 10px;
   padding: 16px 24px;
   border-top: 1px solid var(--border);
-}
-
-.schema-hint {
-  background: #f8f9fd;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 14px 16px;
-  font-size: 12.5px;
-  color: var(--text-mid);
-  margin-top: 6px;
-}
-.schema-hint p { margin: 0 0 6px; }
-.schema-title { font-weight: 600; color: var(--text-dark); margin-top: 10px !important; }
-.schema-hint pre {
-  background: #fff;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 12px;
-  font-size: 11.5px;
-  overflow-x: auto;
-  margin: 4px 0 0;
 }
 
 /* ===================== DEVICES PAGE ===================== */
@@ -748,12 +794,16 @@ button, input {
   outline: none;
   background: transparent;
   flex: 1;
+  min-width: 0;
   font-size: 14px;
   color: var(--text-dark);
   font-family: inherit;
 }
 @media (max-width: 900px) {
-  .device-form { grid-template-columns: 1fr; }
+  /* ต้องเป็น minmax(0,1fr) ไม่ใช่ 1fr เฉยๆ เพราะ 1fr = minmax(auto,1fr)
+     ซึ่งมีค่าต่ำสุดเท่ากับ min-content ของช่องที่กว้างที่สุด ถ้ากว้างกว่ากรอบ
+     คอลัมน์จะดันล้นออกนอกกล่องขาว (เห็นชัดตอนเปิดในโทรศัพท์) */
+  .device-form { grid-template-columns: minmax(0, 1fr); }
   .device-form .field,
   .device-form .field.wide,
   .device-form .btn-primary { grid-column: auto; }

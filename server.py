@@ -18,7 +18,7 @@ import sys
 # คอนโซล Windows บางเครื่องเป็น cp1252 — พิมพ์ข้อความไทยแล้วพัง
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
 
@@ -52,17 +52,6 @@ STATUS_ALIASES = {
     "down": "down", "offline": "down", "0": "down", "false": "down",
     "unknown": "unknown",
 }
-
-# แสดงเมื่อยังไม่ได้ตั้งค่า API ปลายทาง
-DEMO_DATA = {
-    "recorder":    {"up": 33,  "down": 0,  "unknown": 0},
-    "camera":      {"up": 707, "down": 12, "unknown": 0},
-    "transmitter": {"up": 0,   "down": 0,  "unknown": 0},
-    "receiver":    {"up": 0,   "down": 0,  "unknown": 0},
-    "router":      {"up": 6,   "down": 0,  "unknown": 0},
-    "accesspoint": {"up": 126, "down": 1,  "unknown": 0},
-}
-
 
 def load_json(path, default):
     try:
@@ -255,40 +244,19 @@ def api_me():
     return jsonify(user=session["user"])
 
 
-# ---------------- upstream API proxy ----------------
-def fetch_upstream(url, key, timeout=10):
-    headers = {"Authorization": f"Bearer {key}"} if key else {}
-    r = requests.get(url, headers=headers, timeout=timeout)
-    r.raise_for_status()
-    return r.json()
-
-
+# ---------------- สรุปยอดรายหมวด ----------------
 @app.get("/api/status")
 @login_required
 def api_status():
-    cfg = load_config()
-
-    # โหมด 1: มีอุปกรณ์ในทะเบียน → นับสถานะจากที่ MikroTik รายงานเข้ามา
-    store = load_devices()
-    if store["devices"]:
-        limit = stale_limit(cfg)
-        now = datetime.now()
-        counts = {k: {"up": 0, "down": 0, "unknown": 0} for k in CATEGORY_KEYS}
-        for dev in store["devices"].values():
-            cat = dev.get("category")
-            if cat not in counts:
-                continue
+    """ยอดรวมรายหมวด นับจากทะเบียนอุปกรณ์ที่ MikroTik รายงานเข้ามา"""
+    limit = stale_limit(load_config())
+    now = datetime.now(timezone.utc)
+    counts = {k: {"up": 0, "down": 0, "unknown": 0} for k in CATEGORY_KEYS}
+    for dev in load_devices()["devices"].values():
+        cat = dev.get("category")
+        if cat in counts:
             counts[cat][effective_status(dev, limit, now)] += 1
-        return jsonify(source="devices", data=counts, stale_minutes=limit)
-
-    # โหมด 2: ตั้งค่า API ภายนอกไว้ → proxy
-    url = cfg.get("api_url")
-    if not url:
-        return jsonify(source="demo", data=DEMO_DATA)
-    try:
-        return jsonify(source="api", data=fetch_upstream(url, cfg.get("api_key")))
-    except Exception as exc:  # เชื่อม API ปลายทางไม่ได้
-        return jsonify(error=str(exc)), 502
+    return jsonify(data=counts, stale_minutes=limit)
 
 
 # ---------------- device registry + MikroTik Netwatch ----------------
@@ -312,15 +280,18 @@ def stale_limit(cfg):
 
 
 def quiet_minutes(dev, now):
-    """เงียบมานานกี่นาทีแล้วนับจากรายงานครั้งล่าสุด — คิดฝั่งเซิร์ฟเวอร์เท่านั้น
-    เพราะ last_seen ไม่มี timezone ติดมาด้วย ถ้าให้เบราว์เซอร์คิดเองจะเพี้ยน
-    ทันทีที่ deploy อยู่คนละโซนเวลากับคนดู (เช่นเซิร์ฟเวอร์ UTC คนดูอยู่ไทย)"""
+    """เงียบมานานกี่นาทีแล้วนับจากรายงานครั้งล่าสุด — คิดฝั่งเซิร์ฟเวอร์ที่เดียว
+    เพื่อให้ตัวเลขบนการ์ดกับที่แสดงในตารางมาจากการคำนวณชุดเดียวกันเสมอ
+    และไม่พึ่งนาฬิกาของเครื่องที่เปิดดูซึ่งอาจตั้งเวลาไว้ไม่ตรง"""
     if not dev.get("last_seen"):
         return None
     try:
         seen = datetime.fromisoformat(dev["last_seen"])
     except ValueError:
         return None
+    if seen.tzinfo is None:
+        # ข้อมูลที่บันทึกไว้ก่อนเปลี่ยนมาเก็บพร้อม offset — ตอนนั้นเป็นเวลาท้องถิ่นของเซิร์ฟเวอร์
+        seen = seen.astimezone()
     return max(0, int((now - seen).total_seconds() // 60))
 
 
@@ -426,7 +397,9 @@ def mikrotik_push():
         print(f"* netwatch {src}: ไม่พบอุปกรณ์ id={dev_id or '-'} (ตรวจเลข ID ในหน้าอุปกรณ์)", flush=True)
         return "unknown id", 404
     dev["status"] = None if status == "unknown" else status
-    dev["last_seen"] = datetime.now().isoformat(timespec="seconds")
+    # เก็บเป็น UTC พร้อม offset ติดไปด้วย — โฮสต์จริงมักรันเป็น UTC (Vercel ก็ใช่)
+    # ถ้าเก็บแบบไม่มี timezone หน้าเว็บจะเอาไปโชว์ดิบๆ แล้วคนดูที่ไทยเห็นเวลาย้อนไป 7 ชั่วโมง
+    dev["last_seen"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     save_devices(store)
     print(f"* netwatch {src}: id={dev_id} ({dev.get('name')}) -> {status}", flush=True)
     return "OK"
@@ -461,7 +434,7 @@ def api_devices():
         return (0, int(kv[0]), "") if kv[0].isdigit() else (1, 0, kv[0])
 
     limit = stale_limit(load_config())
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
     devices = [
         {"id": k, **v, "quiet_min": quiet_minutes(v, now), "stale": is_stale(v, limit, now)}
         for k, v in sorted(store["devices"].items(), key=order)
@@ -538,10 +511,7 @@ def api_del_device(dev_id):
 @app.get("/api/config")
 @login_required
 def api_get_config():
-    cfg = load_config()
-    # ส่งกลับแค่ URL และ "มี key หรือไม่" — ไม่ส่งตัว key ออกไปเด็ดขาด
-    return jsonify(url=cfg.get("api_url", ""), hasKey=bool(cfg.get("api_key")),
-                   staleMinutes=stale_limit(cfg))
+    return jsonify(staleMinutes=stale_limit(load_config()))
 
 
 @app.post("/api/config")
@@ -549,36 +519,17 @@ def api_get_config():
 def api_set_config():
     data = request.get_json(silent=True) or {}
     cfg = load_config()
-    cfg["api_url"] = (data.get("url") or "").strip()
-    key = (data.get("key") or "").strip()
-    if key:                      # กรอกใหม่ = เปลี่ยน key
-        cfg["api_key"] = key
-    elif not cfg["api_url"]:     # ล้าง URL = ล้าง key ด้วย
-        cfg.pop("api_key", None)
     # แก้เฉพาะตอนที่ส่งมาจริง ไม่งั้นหน้าที่ไม่รู้จักฟิลด์นี้จะเผลอล้างค่าทิ้ง
     if "staleMinutes" in data:
         try:
             cfg["stale_minutes"] = max(0, min(1440, int(data.get("staleMinutes") or 0)))
         except (TypeError, ValueError):
             return jsonify(error="เวลาที่ยอมให้ขาดการติดต่อต้องเป็นตัวเลข (นาที)"), 400
+    # เก็บตกค่าของโหมดดึงจาก API ภายนอกที่เลิกใช้แล้ว — api_key เป็นความลับ ไม่ควรค้างไว้
+    cfg.pop("api_url", None)
+    cfg.pop("api_key", None)
     save_config(cfg)
     return jsonify(ok=True)
-
-
-@app.post("/api/config/test")
-@login_required
-def api_test_config():
-    data = request.get_json(silent=True) or {}
-    cfg = load_config()
-    url = (data.get("url") or "").strip() or cfg.get("api_url")
-    key = (data.get("key") or "").strip() or cfg.get("api_key")
-    if not url:
-        return jsonify(error="ยังไม่ได้กรอก URL"), 400
-    try:
-        fetch_upstream(url, key)
-        return jsonify(ok=True)
-    except Exception as exc:
-        return jsonify(error=str(exc)), 502
 
 
 # ---------------- static frontend ----------------

@@ -56,9 +56,8 @@
     return dev.status === "up" ? "up" : dev.status === "down" ? "down" : "unknown";
   }
 
-  // stale = เงียบเกินเพดานที่ตั้งไว้ เซิร์ฟเวอร์เป็นคนคิดให้ (last_seen ไม่มี timezone
-  // ให้เบราว์เซอร์คิดเองไม่ได้) — ต้องตกเป็น unknown ให้ตรงกับที่เซิร์ฟเวอร์นับ
-  // ไม่งั้นตัวเลขบนการ์ดกับรายการที่กดเข้าไปดูจะไม่ตรงกัน
+  // stale = เงียบเกินเพดานที่ตั้งไว้ เซิร์ฟเวอร์เป็นคนคิดให้ — ต้องตกเป็น unknown
+  // ให้ตรงกับที่เซิร์ฟเวอร์นับ ไม่งั้นตัวเลขบนการ์ดกับรายการที่กดเข้าไปดูจะไม่ตรงกัน
   function devStatus(dev) {
     return dev.stale ? "unknown" : rawStatus(dev);
   }
@@ -125,8 +124,16 @@
     return td;
   }
 
+  // last_seen เก็บเป็น UTC พร้อม offset — ต้องแปลงเป็นเวลาของเครื่องที่เปิดดู
+  // ไม่งั้นตอน deploy บนโฮสต์ที่รันเป็น UTC คนดูที่ไทยจะเห็นเวลาย้อนไป 7 ชั่วโมง
   function seenText(dev) {
-    return dev.last_seen ? dev.last_seen.replace("T", " ") : "-";
+    if (!dev.last_seen) return "-";
+    const t = new Date(dev.last_seen);
+    // ข้อมูลเก่าที่ไม่มี offset ติดมา parse ไม่ได้ก็โชว์ตามที่เก็บไว้ไปก่อน
+    if (isNaN(t.getTime())) return dev.last_seen.replace("T", " ");
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())} `
+      + `${pad(t.getHours())}:${pad(t.getMinutes())}:${pad(t.getSeconds())}`;
   }
 
   // เวลารายงานล่าสุด + บอกด้วยว่าผ่านมานานแค่ไหนแล้ว
@@ -204,16 +211,6 @@
       { key: "router",      title: "ROUTER",        icon: "fa-microchip",       accent: "blue"  },
       { key: "accesspoint", title: "ACCESS POINT",  icon: "fa-wifi",            accent: "green" },
     ];
-
-    // alias keys the aggregator will recognize in raw API responses
-    const ALIASES = {
-      recorder:    ["recorder", "nvr", "dvr", "เครื่องบันทึก"],
-      camera:      ["camera", "cctv", "กล้อง", "กล้องcctv"],
-      transmitter: ["transmitter", "tx", "เครื่องส่ง"],
-      receiver:    ["receiver", "rx", "เครื่องรับ"],
-      router:      ["router"],
-      accesspoint: ["accesspoint", "access_point", "ap"],
-    };
 
     let dashboardData = {};
     // รายอุปกรณ์จากทะเบียน — ใช้ตอนกดการ์ด/กระดิ่งเพื่อดูว่า down ตัวไหน ที่ไหน
@@ -300,8 +297,7 @@
       const list = deviceList.length ? devicesIn(catKey, status) : [];
 
       if (!deviceList.length) {
-        // โหมด API ภายนอก/ตัวอย่าง — มีแต่ยอดรวม ไม่มีข้อมูลรายตัวให้แสดง
-        tbody.innerHTML = `<tr><td colspan="7" class="dev-empty">ตัวเลขชุดนี้ไม่ได้มาจากทะเบียนอุปกรณ์ จึงดูรายตัวไม่ได้ — เพิ่มอุปกรณ์ในหน้า “อุปกรณ์” ก่อน</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="7" class="dev-empty">ยังไม่มีอุปกรณ์ในทะเบียน — เพิ่มได้ที่หน้า “อุปกรณ์”</td></tr>`;
       } else if (!list.length) {
         tbody.innerHTML = `<tr><td colspan="7" class="dev-empty">ไม่มีอุปกรณ์ในกลุ่มนี้</td></tr>`;
       } else {
@@ -353,7 +349,7 @@
       downCats.forEach((cat) => {
         groups.push(notifGroup(
           cat.key, cat.title, dashboardData[cat.key].down, "",
-          (ul) => fillNotifSub(ul, deviceList.length ? devicesIn(cat.key, "down") : null)
+          (ul) => fillNotifSub(ul, devicesIn(cat.key, "down"))
         ));
       });
 
@@ -402,13 +398,12 @@
       return li;
     }
 
-    // list เป็น null = โหมด API ภายนอก ซึ่งมีแต่ยอดรวม ไม่มีรายตัวให้แสดง
     function fillNotifSub(ul, list) {
       ul.innerHTML = "";
-      if (!list || !list.length) {
+      if (!list.length) {
         const li = document.createElement("li");
         li.className = "notif-sub-empty";
-        li.textContent = list ? "ไม่มีอุปกรณ์ในกลุ่มนี้" : "ตัวเลขชุดนี้มาจาก API ภายนอก จึงดูรายตัวไม่ได้";
+        li.textContent = "ไม่มีอุปกรณ์ในกลุ่มนี้";
         ul.appendChild(li);
         return;
       }
@@ -501,22 +496,13 @@
     const settingsModal = $("#settingsModal");
 
     async function openSettings() {
-      $("#apiError").textContent = "";
-      $("#apiUrl").value = "";
-      $("#apiKey").value = "";
+      $("#settingsError").textContent = "";
       $("#staleMinutes").value = "";
       $("#autoRefresh").checked = autoRefreshOn();
       settingsModal.hidden = false;
       try {
         const res = await api("/api/config");
-        if (res.ok) {
-          const cfg = await res.json();
-          $("#apiUrl").value = cfg.url || "";
-          $("#apiKey").placeholder = cfg.hasKey
-            ? "ตั้งค่าไว้แล้ว (ซ่อนอยู่บนเซิร์ฟเวอร์) — พิมพ์ใหม่เพื่อเปลี่ยน"
-            : "ไม่บังคับ";
-          $("#staleMinutes").value = cfg.staleMinutes;
-        }
+        if (res.ok) $("#staleMinutes").value = (await res.json()).staleMinutes;
       } catch {}
     }
     function closeSettings() {
@@ -529,29 +515,24 @@
     });
     $("#apiStatus").addEventListener("click", openSettings);
     $("#settingsClose").addEventListener("click", closeSettings);
+    $("#settingsCancel").addEventListener("click", closeSettings);
     settingsModal.addEventListener("click", (e) => {
       if (e.target === settingsModal) closeSettings();
     });
 
     function updateApiStatus(mode) {
-      // mode: "connected" | "devices" | "demo" | "loading" | "error"
+      // mode: "ok" | "loading" | "error"
       const el = $("#apiStatus");
-      el.classList.remove("connected", "demo", "loading", "error");
-      if (mode === "connected") {
-        el.classList.add("connected");
-        el.querySelector("span").textContent = "เชื่อมต่อ API แล้ว";
-      } else if (mode === "devices") {
+      el.classList.remove("connected", "loading", "error");
+      if (mode === "ok") {
         el.classList.add("connected");
         el.querySelector("span").textContent = "รับสถานะจากอุปกรณ์ (MikroTik Netwatch)";
-      } else if (mode === "demo") {
-        el.classList.add("demo");
-        el.querySelector("span").textContent = "แสดงข้อมูลตัวอย่าง (ยังไม่ได้ตั้งค่า API)";
       } else if (mode === "loading") {
         el.classList.add("loading");
         el.querySelector("span").textContent = "กำลังดึงข้อมูล...";
       } else {
         el.classList.add("error");
-        el.querySelector("span").textContent = "เชื่อมต่อ API ไม่สำเร็จ";
+        el.querySelector("span").textContent = "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้";
       }
     }
 
@@ -566,44 +547,16 @@
       autoRefreshTimer = null;
     }
 
-    $("#apiTestBtn").addEventListener("click", async () => {
-      const errEl = $("#apiError");
-      errEl.style.color = "";
-      errEl.textContent = "กำลังทดสอบ...";
-      try {
-        const res = await api("/api/config/test", {
-          method: "POST",
-          body: JSON.stringify({
-            url: $("#apiUrl").value.trim(),
-            key: $("#apiKey").value.trim(),
-          }),
-        });
-        const j = await res.json().catch(() => ({}));
-        if (res.ok) {
-          errEl.style.color = "#22b573";
-          errEl.textContent = "เชื่อมต่อสำเร็จ";
-        } else {
-          errEl.textContent = "เชื่อมต่อไม่สำเร็จ: " + (j.error || "HTTP " + res.status);
-        }
-      } catch (err) {
-        if (err.message !== "unauthorized") errEl.textContent = "เชื่อมต่อไม่สำเร็จ";
-      }
-    });
-
-    $("#apiSaveBtn").addEventListener("click", async () => {
-      const errEl = $("#apiError");
+    $("#settingsSave").addEventListener("click", async () => {
+      const errEl = $("#settingsError");
       errEl.style.color = "";
       errEl.textContent = "กำลังบันทึก...";
       const stale = $("#staleMinutes").value.trim();
       try {
         const res = await api("/api/config", {
           method: "POST",
-          body: JSON.stringify({
-            url: $("#apiUrl").value.trim(),
-            key: $("#apiKey").value.trim(),
-            // เว้นว่างไว้ = ไม่แตะค่าเดิม (ปิดการตรวจต้องใส่ 0 ตามที่คำอธิบายบอก)
-            ...(stale === "" ? {} : { staleMinutes: stale }),
-          }),
+          // เว้นว่างไว้ = ไม่แตะค่าเดิม (ปิดการตรวจต้องใส่ 0 ตามที่คำอธิบายบอก)
+          body: JSON.stringify(stale === "" ? {} : { staleMinutes: stale }),
         });
         if (!res.ok) throw new Error("HTTP " + res.status);
 
@@ -612,7 +565,7 @@
 
         await fetchDashboardData();
         errEl.style.color = "#22b573";
-        errEl.textContent = "บันทึกและดึงข้อมูลสำเร็จ";
+        errEl.textContent = "บันทึกแล้ว";
         setTimeout(closeSettings, 700);
       } catch (err) {
         if (err.message !== "unauthorized") {
@@ -629,18 +582,13 @@
         if (!res.ok) throw new Error("HTTP " + res.status);
         const payload = await res.json();
 
-        // ยอดบนการ์ดนับมาจากทะเบียนอุปกรณ์เมื่อ source === "devices" เท่านั้น
-        // โหมดอื่น (API ภายนอก/ตัวอย่าง) มีแต่ยอดรวม จึงไม่มีรายตัวให้กดดู
-        deviceList = payload.source === "devices" ? await fetchDeviceList() : [];
+        // ดึงรายตัวมาด้วย เพื่อให้กดการ์ด/กระดิ่งแล้วดูได้ว่าเป็นอุปกรณ์ตัวไหน
+        deviceList = await fetchDeviceList();
 
         lastUpdatedAt = new Date();
         dashboardData = normalizeData(payload.data);
         renderCards();
-        updateApiStatus(
-          payload.source === "api" ? "connected"
-          : payload.source === "devices" ? "devices"
-          : "demo"
-        );
+        updateApiStatus("ok");
       } catch (err) {
         if (err.message !== "unauthorized") updateApiStatus("error");
         throw err;
@@ -659,43 +607,15 @@
 
     function normalizeData(json) {
       const result = {};
-      CATEGORIES.forEach((c) => (result[c.key] = { up: 0, down: 0, unknown: 0 }));
-
-      if (Array.isArray(json)) {
-        // device-list mode: [{category/type, status}, ...]
-        json.forEach((item) => {
-          const rawCat = (item.category || item.type || "").toString().toLowerCase();
-          const catKey = resolveCategoryKey(rawCat);
-          if (!catKey) return;
-          const status = (item.status || "").toString().toLowerCase();
-          if (status === "up" || status === "online" || status === "ปกติ") result[catKey].up++;
-          else if (status === "down" || status === "offline" || status === "ขัดข้อง") result[catKey].down++;
-          else result[catKey].unknown++;
-        });
-        return result;
-      }
-
-      if (json && typeof json === "object") {
-        // summary mode: { recorder: {up,down,unknown}, ... }
-        Object.keys(json).forEach((rawKey) => {
-          const catKey = resolveCategoryKey(rawKey.toLowerCase());
-          if (!catKey) return;
-          const val = json[rawKey] || {};
-          result[catKey] = {
-            up: Number(val.up ?? val.UP ?? 0) || 0,
-            down: Number(val.down ?? val.DOWN ?? 0) || 0,
-            unknown: Number(val.unknown ?? val.UNKNOWN ?? 0) || 0,
-          };
-        });
-      }
+      CATEGORIES.forEach((cat) => {
+        const val = (json || {})[cat.key] || {};
+        result[cat.key] = {
+          up: Number(val.up) || 0,
+          down: Number(val.down) || 0,
+          unknown: Number(val.unknown) || 0,
+        };
+      });
       return result;
-    }
-
-    function resolveCategoryKey(raw) {
-      for (const key of Object.keys(ALIASES)) {
-        if (ALIASES[key].some((alias) => raw.includes(alias))) return key;
-      }
-      return null;
     }
 
     // -------- init --------
@@ -862,13 +782,41 @@
       }
     });
 
-    async function deleteDevice(dev) {
-      if (!confirm(`ลบอุปกรณ์ ID ${dev.id} "${dev.name}" ?`)) return;
+    // -------- ยืนยันก่อนลบ --------
+    const confirmModal = $("#confirmModal");
+    let pendingDelete = null;
+
+    function deleteDevice(dev) {
+      pendingDelete = dev;
+      $("#confirmName").textContent = `ID ${dev.id} — ${dev.name}`;
+      $("#confirmMeta").textContent = [
+        CATEGORY_TITLES[dev.category] || dev.category,
+        dev.circuit ? `วงจร ${dev.circuit}` : "",
+        dev.ip,
+      ].filter(Boolean).join(" · ");
+      confirmModal.hidden = false;
+    }
+
+    function closeConfirm() {
+      confirmModal.hidden = true;
+      pendingDelete = null;
+    }
+
+    $("#confirmOk").addEventListener("click", async () => {
+      if (!pendingDelete) return;
+      const dev = pendingDelete;
+      closeConfirm();
       try {
         const res = await api(`/api/devices/${dev.id}`, { method: "DELETE" });
         if (res.ok) loadDevices();
       } catch {}
-    }
+    });
+
+    $("#confirmClose").addEventListener("click", closeConfirm);
+    $("#confirmCancel").addEventListener("click", closeConfirm);
+    confirmModal.addEventListener("click", (e) => {
+      if (e.target === confirmModal) closeConfirm();
+    });
 
     // -------- แก้ไขอุปกรณ์ --------
     const editModal = $("#editModal");
@@ -1183,6 +1131,15 @@
           setTimeout(() => { btn.innerHTML = `<i class="fa-regular fa-copy"></i> copy`; }, 1500);
         } catch {}
       });
+    });
+
+    // กด Esc ปิดหน้าต่างที่เปิดอยู่ ทีละชั้นจากอันบนสุด (แผนที่เปิดทับหน้าต่างแก้ไขได้)
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      if (!mapModal.hidden) closeMap();
+      else if (!confirmModal.hidden) closeConfirm();
+      else if (!editModal.hidden) closeEditModal();
+      else if (!codeModal.hidden) codeModal.hidden = true;
     });
 
     // -------- init --------

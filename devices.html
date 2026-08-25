@@ -248,6 +248,33 @@
   </div>
 </div>
 
+<!-- ===================== DELETE CONFIRM MODAL ===================== -->
+<div class="modal-overlay" id="confirmModal" hidden>
+  <div class="modal modal-sm">
+    <div class="modal-header">
+      <h2><i class="fa-solid fa-trash-can"></i> ลบอุปกรณ์</h2>
+      <button class="modal-close" id="confirmClose"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="modal-body confirm-body">
+      <div class="confirm-icon"><i class="fa-solid fa-trash-can"></i></div>
+      <p class="confirm-lead">ลบอุปกรณ์นี้ออกจากทะเบียน?</p>
+      <div class="confirm-card">
+        <div class="confirm-name" id="confirmName"></div>
+        <div class="confirm-meta" id="confirmMeta"></div>
+      </div>
+      <p class="confirm-note">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        <span>ลบแล้วกู้คืนไม่ได้ และสคริปต์ที่วางไว้ใน MikroTik ของอุปกรณ์ตัวนี้จะยิงเข้ามาแล้วไม่เจอทะเบียน
+        ควรไปลบ Netwatch กับ Scheduler ฝั่ง MikroTik ด้วย</span>
+      </p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" id="confirmCancel">ยกเลิก</button>
+      <button class="btn-danger" id="confirmOk">ลบอุปกรณ์</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===================== MAP PICKER MODAL ===================== -->
 <div class="modal-overlay" id="mapModal" hidden>
   <div class="modal modal-wide">
