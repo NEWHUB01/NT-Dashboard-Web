@@ -1,2 +1,4 @@
 flask>=3.0
 requests>=2.31
+# ใช้เฉพาะตอน host เอง (python -m waitress ...) — บน Vercel ไม่ได้ใช้
+waitress>=3.0

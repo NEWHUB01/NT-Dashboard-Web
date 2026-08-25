@@ -13,6 +13,7 @@ import re
 import secrets
 import socket
 import sys
+import threading
 import time
 
 # คอนโซล Windows บางเครื่องเป็น cp1252 — พิมพ์ข้อความไทยแล้วพัง
@@ -190,9 +191,14 @@ app.secret_key = _secret
 app.permanent_session_lifetime = timedelta(days=30)
 app.config["SESSION_COOKIE_HTTPONLY"] = True   # JS อ่าน cookie ไม่ได้
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-# บนโฮสต์จริงเป็น https เสมอ จึงบังคับให้ cookie ไปเฉพาะ https ได้
-# ส่วนโหมดรันเองในวง LAN เป็น http ถ้าบังคับจะล็อกอินไม่ได้เลย
-app.config["SESSION_COOKIE_SECURE"] = bool(kv_conn())
+# บังคับให้ cookie ไปเฉพาะ https — เดาจากว่าต่อ Redis อยู่ไหม เพราะโฮสต์แบบนั้น
+# (Vercel ฯลฯ) เป็น https เสมอ ส่วนโหมดรันเองในวง LAN เป็น http ถ้าบังคับจะล็อกอินไม่ได้เลย
+# เดาผิดได้ถ้ารันเองแล้วต่อ Redis ด้วย จึง override ผ่าน env var ได้: COOKIE_SECURE=0 หรือ 1
+_cookie_secure = os.environ.get("COOKIE_SECURE")
+app.config["SESSION_COOKIE_SECURE"] = (
+    _cookie_secure.strip() not in ("0", "false", "no", "")
+    if _cookie_secure is not None else bool(kv_conn())
+)
 
 
 @app.errorhandler(StorageError)
@@ -209,6 +215,21 @@ def no_store_api(resp):
         resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
         resp.headers["Pragma"] = "no-cache"
     return resp
+
+
+# ทุกคำสั่งที่แก้ข้อมูลจะอ่านทะเบียนทั้งก้อน แก้ แล้วเขียนกลับ ถ้าสองคำขอทำพร้อมกัน
+# ตัวที่เขียนทีหลังจะทับตัวแรกจนอัปเดตหายไปเงียบๆ — ล็อกให้ทำทีละคำขอ
+# ช่วยได้เมื่อรันเป็น process เดียว (โหมด self-host) ส่วนบน serverless ที่มีหลาย
+# instance วิ่งคนละเครื่องยังชนกันได้ ต้องไปแก้ที่โครงสร้างข้อมูลแทน
+STORE_LOCK = threading.RLock()
+
+
+def serialized(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        with STORE_LOCK:
+            return fn(*args, **kwargs)
+    return wrapper
 
 
 def login_required(fn):
@@ -472,6 +493,7 @@ def push_one(src):
 
 
 @app.route("/status/mikrotik.php", methods=["GET", "POST"])
+@serialized
 def mikrotik_push():
     """รับสถานะจาก MikroTik Netwatch — path เดียวกับระบบจริงในคู่มือ
     ทีละตัว: /status/mikrotik.php?id=359&status=up   (สคริปต์แท็บ Up/Down)
@@ -532,6 +554,7 @@ def api_devices():
 
 @app.post("/api/devices")
 @login_required
+@serialized
 def api_add_device():
     data = request.get_json(silent=True) or {}
     fields, err = device_fields(data)
@@ -558,6 +581,7 @@ def api_add_device():
 
 @app.put("/api/devices/<dev_id>")
 @login_required
+@serialized
 def api_edit_device(dev_id):
     """แก้ข้อมูลอุปกรณ์ — สถานะกับเวลารายงานล่าสุดไม่แตะ เพราะเป็นของที่ MikroTik ยิงเข้ามา
     เปลี่ยนหมายเลขไอดีได้ด้วย แต่ต้องไปแก้สคริปต์ใน MikroTik ตามให้ตรงกัน"""
@@ -587,6 +611,7 @@ def api_edit_device(dev_id):
 
 @app.delete("/api/devices/<dev_id>")
 @login_required
+@serialized
 def api_del_device(dev_id):
     store = load_devices()
     if dev_id not in store["devices"]:
@@ -621,6 +646,7 @@ def api_export_devices():
 
 @app.post("/api/devices/import")
 @login_required
+@serialized
 def api_import_devices():
     """กู้คืนจากไฟล์สำรอง — แทนที่ทะเบียนเดิมทั้งหมด
 
@@ -673,6 +699,7 @@ def api_get_config():
 
 @app.post("/api/config")
 @login_required
+@serialized
 def api_set_config():
     data = request.get_json(silent=True) or {}
     cfg = load_config()
