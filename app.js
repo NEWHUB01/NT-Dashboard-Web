@@ -156,6 +156,70 @@
   }
 
   // ---------------------------------------------------------------
+  // SETTINGS MODAL (ใช้ร่วมกันทั้งหน้าแผงควบคุมและหน้าอุปกรณ์)
+  // ---------------------------------------------------------------
+  // ค่าเริ่มต้น = เปิด (ต้องปิดเองถึงจะหยุด) ไม่งั้นหน้าจอจะค้างข้อมูลเดิม
+  // จนกว่าจะกด refresh เอง ทั้งที่อุปกรณ์รายงานเข้ามาแล้ว
+  const autoRefreshOn = () => localStorage.getItem(LS_AUTO_REFRESH) !== "0";
+
+  // applyChanges: ให้แต่ละหน้าจัดการรอบดึงข้อมูลของตัวเองหลังบันทึก
+  function initSettings(applyChanges) {
+    const modal = $("#settingsModal");
+
+    async function open() {
+      $("#settingsError").textContent = "";
+      $("#staleMinutes").value = "";
+      $("#autoRefresh").checked = autoRefreshOn();
+      modal.hidden = false;
+      try {
+        const res = await api("/api/config");
+        if (res.ok) $("#staleMinutes").value = (await res.json()).staleMinutes;
+      } catch {}
+    }
+
+    function close() {
+      modal.hidden = true;
+    }
+
+    $("#navSettings").addEventListener("click", (e) => {
+      e.preventDefault();
+      open();
+    });
+    $("#settingsClose").addEventListener("click", close);
+    $("#settingsCancel").addEventListener("click", close);
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) close();
+    });
+
+    $("#settingsSave").addEventListener("click", async () => {
+      const errEl = $("#settingsError");
+      errEl.style.color = "";
+      errEl.textContent = "กำลังบันทึก...";
+      const stale = $("#staleMinutes").value.trim();
+      try {
+        const res = await api("/api/config", {
+          method: "POST",
+          // เว้นว่างไว้ = ไม่แตะค่าเดิม (ปิดการตรวจต้องใส่ 0 ตามที่คำอธิบายบอก)
+          body: JSON.stringify(stale === "" ? {} : { staleMinutes: stale }),
+        });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+
+        localStorage.setItem(LS_AUTO_REFRESH, $("#autoRefresh").checked ? "1" : "0");
+        await applyChanges();
+        errEl.style.color = "#22b573";
+        errEl.textContent = "บันทึกแล้ว";
+        setTimeout(close, 700);
+      } catch (err) {
+        if (err.message !== "unauthorized") {
+          errEl.textContent = "บันทึกค่าไว้แล้ว แต่ดึงข้อมูลไม่สำเร็จ";
+        }
+      }
+    });
+
+    return { open, close, modal };
+  }
+
+  // ---------------------------------------------------------------
   // LOGIN PAGE (index.html)
   // ---------------------------------------------------------------
   const loginForm = $("#loginForm");
@@ -217,10 +281,6 @@
     let deviceList = [];
     let autoRefreshTimer = null;
     let lastUpdatedAt = null;
-
-    // ค่าเริ่มต้น = เปิด (ต้องปิดเองถึงจะหยุด) ไม่งั้นการ์ดจะค้างสถานะเดิม
-    // จนกว่าจะกด refresh หน้าเว็บเอง ทั้งที่อุปกรณ์รายงานเข้ามาแล้ว
-    const autoRefreshOn = () => localStorage.getItem(LS_AUTO_REFRESH) !== "0";
 
     // -------- sidebar --------
     $("#collapseBtn").addEventListener("click", () => {
@@ -493,43 +553,25 @@
     }).catch(() => {});
 
     // -------- settings modal --------
-    const settingsModal = $("#settingsModal");
-
-    async function openSettings() {
-      $("#settingsError").textContent = "";
-      $("#staleMinutes").value = "";
-      $("#autoRefresh").checked = autoRefreshOn();
-      settingsModal.hidden = false;
-      try {
-        const res = await api("/api/config");
-        if (res.ok) $("#staleMinutes").value = (await res.json()).staleMinutes;
-      } catch {}
-    }
-    function closeSettings() {
-      settingsModal.hidden = true;
-    }
-
-    $("#navSettings").addEventListener("click", (e) => {
-      e.preventDefault();
-      openSettings();
-    });
-    $("#settingsClose").addEventListener("click", closeSettings);
-    $("#settingsCancel").addEventListener("click", closeSettings);
-    settingsModal.addEventListener("click", (e) => {
-      if (e.target === settingsModal) closeSettings();
+    initSettings(async () => {
+      if (autoRefreshOn()) startAutoRefresh(); else stopAutoRefresh();
+      await fetchDashboardData();
     });
 
-    // โชว์เฉพาะตอนมีปัญหา — แถบที่เขียวตลอดคนจะเลิกมองมันไปเอง และตอนนี้ข้อมูล
-    // มาทางเดียวคือ MikroTik จึงไม่มีอะไรต้องบอกเวลาทุกอย่างปกติ
     function updateApiStatus(mode) {
       // mode: "ok" | "loading" | "error"
       const el = $("#apiStatus");
-      if (mode !== "error") {
-        el.hidden = true;
-        return;
+      el.classList.remove("connected", "loading", "error");
+      if (mode === "ok") {
+        el.classList.add("connected");
+        el.querySelector("span").textContent = "รับสถานะจากอุปกรณ์ (MikroTik Netwatch)";
+      } else if (mode === "loading") {
+        el.classList.add("loading");
+        el.querySelector("span").textContent = "กำลังดึงข้อมูล...";
+      } else {
+        el.classList.add("error");
+        el.querySelector("span").textContent = "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ — ตัวเลขที่เห็นอาจไม่ใช่ล่าสุด";
       }
-      el.querySelector("span").textContent = "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ — ตัวเลขที่เห็นอาจไม่ใช่ล่าสุด";
-      el.hidden = false;
     }
 
     function startAutoRefresh() {
@@ -542,33 +584,6 @@
       if (autoRefreshTimer) clearInterval(autoRefreshTimer);
       autoRefreshTimer = null;
     }
-
-    $("#settingsSave").addEventListener("click", async () => {
-      const errEl = $("#settingsError");
-      errEl.style.color = "";
-      errEl.textContent = "กำลังบันทึก...";
-      const stale = $("#staleMinutes").value.trim();
-      try {
-        const res = await api("/api/config", {
-          method: "POST",
-          // เว้นว่างไว้ = ไม่แตะค่าเดิม (ปิดการตรวจต้องใส่ 0 ตามที่คำอธิบายบอก)
-          body: JSON.stringify(stale === "" ? {} : { staleMinutes: stale }),
-        });
-        if (!res.ok) throw new Error("HTTP " + res.status);
-
-        localStorage.setItem(LS_AUTO_REFRESH, $("#autoRefresh").checked ? "1" : "0");
-        if ($("#autoRefresh").checked) startAutoRefresh(); else stopAutoRefresh();
-
-        await fetchDashboardData();
-        errEl.style.color = "#22b573";
-        errEl.textContent = "บันทึกแล้ว";
-        setTimeout(closeSettings, 700);
-      } catch (err) {
-        if (err.message !== "unauthorized") {
-          errEl.textContent = "บันทึกค่าไว้แล้ว แต่ดึงข้อมูลไม่สำเร็จ";
-        }
-      }
-    });
 
     // -------- fetch + aggregation --------
     async function fetchDashboardData() {
@@ -1129,18 +1144,32 @@
       });
     });
 
+    // -------- settings modal --------
+    const settings = initSettings(async () => {
+      startPolling();
+      await loadDevices();
+    });
+
+    let pollTimer = null;
+
+    function startPolling() {
+      if (pollTimer) clearInterval(pollTimer);
+      pollTimer = autoRefreshOn() ? setInterval(loadDevices, 15000) : null;
+    }
+
     // กด Esc ปิดหน้าต่างที่เปิดอยู่ ทีละชั้นจากอันบนสุด (แผนที่เปิดทับหน้าต่างแก้ไขได้)
     document.addEventListener("keydown", (e) => {
       if (e.key !== "Escape") return;
       if (!mapModal.hidden) closeMap();
       else if (!confirmModal.hidden) closeConfirm();
       else if (!editModal.hidden) closeEditModal();
+      else if (!settings.modal.hidden) settings.close();
       else if (!codeModal.hidden) codeModal.hidden = true;
     });
 
     // -------- init --------
     loadDevices();
-    setInterval(loadDevices, 15000); // อัปเดตสถานะในตารางเป็นระยะ
+    startPolling(); // อัปเดตสถานะในตารางเป็นระยะ
     // กลับมาที่แท็บนี้เมื่อไหร่ ให้ดึงสถานะล่าสุดทันที ไม่ต้องรอรอบถัดไป
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) loadDevices();

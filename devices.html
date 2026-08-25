@@ -45,6 +45,11 @@
         <span>อุปกรณ์</span>
       </a>
 
+      <a href="#" class="nav-item" id="navSettings">
+        <i class="fa-solid fa-gear"></i>
+        <span>การตั้งค่า</span>
+      </a>
+
       <a href="#" class="nav-item" id="navLogout">
         <i class="fa-solid fa-right-from-bracket"></i>
         <span>ออกจากระบบ</span>
@@ -172,6 +177,43 @@
         <p class="table-hint">เพิ่มอุปกรณ์แล้วกดปุ่ม <b>&lt;/&gt; โค้ด</b> เพื่อ copy สคริปต์ไปวางใน MikroTik → Tools → Netwatch (แท็บ Up และ Down)</p>
       </section>
     </main>
+  </div>
+</div>
+
+<!-- ===================== SETTINGS MODAL ===================== -->
+<div class="modal-overlay" id="settingsModal" hidden>
+  <div class="modal">
+    <div class="modal-header">
+      <h2><i class="fa-solid fa-gear"></i> การตั้งค่า</h2>
+      <button class="modal-close" id="settingsClose"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+
+    <div class="modal-body">
+      <label class="field">
+        <span>ถือว่า "ขาดการติดต่อ" เมื่อไม่มีรายงานเข้ามาเกิน (นาที)</span>
+        <div class="field-input">
+          <i class="fa-solid fa-clock"></i>
+          <input type="number" id="staleMinutes" min="0" max="1440" step="1" placeholder="3" />
+        </div>
+      </label>
+      <p class="code-hint">
+        อุปกรณ์ที่เงียบเกินเวลานี้จะถูกนับเป็น <b>UNKNOWN</b> แทน UP/DOWN เพราะไม่รู้สถานะจริงแล้ว
+        (MikroTik ดับ / เน็ตขาด / สคริปต์หาย) — ใช้ได้ต่อเมื่อลงสคริปต์ <b>Scheduler</b> ครบทุกตัวแล้ว
+        ค่าที่เหมาะคือ 3 เท่าของ interval ที่ตั้งไว้ ใส่ <b>0</b> เพื่อปิดการตรวจ
+      </p>
+
+      <label class="remember">
+        <input type="checkbox" id="autoRefresh" />
+        <span>ดึงข้อมูลอัตโนมัติทุก 15 วินาที</span>
+      </label>
+
+      <p class="login-error" id="settingsError"></p>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn-secondary" id="settingsCancel">ยกเลิก</button>
+      <button class="btn-primary" id="settingsSave">บันทึก</button>
+    </div>
   </div>
 </div>
 
