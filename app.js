@@ -1174,23 +1174,16 @@
       $("#batchNoIpCount").textContent = devices.length - withIp.length;
       $("#batchNoIp").hidden = withIp.length === devices.length;
 
-      if (!withIp.length) {
-        $("#batchCode").textContent =
-          "ยังไม่มีอุปกรณ์ที่กรอก IP — สคริปต์ตัวนี้ต้องใช้ IP ไปอ่านสถานะจาก Netwatch";
-        return;
-      }
-
-      const map = withIp.map((d) => `"${d.id}"="${d.ip}"`).join(";");
       const token = pushToken ? `?token=${encodeURIComponent(pushToken)}` : "";
+      // ไม่ฝังรายชื่ออุปกรณ์ไว้ในสคริปต์ ให้มันวนอ่านจาก Netwatch เองแล้วส่ง IP มา
+      // เซิร์ฟเวอร์จับคู่ IP กับทะเบียนให้ — เพิ่มอุปกรณ์ทีหลังจึงไม่ต้องมาแก้สคริปต์อีก
       $("#batchCode").textContent = [
-        `:local map {${map}};`,
         `:local out "";`,
-        `:foreach id,ip in=$map do={`,
-        `  :local st "unknown";`,
-        `  :local e [/tool netwatch find where host=$ip];`,
-        `  :if ([:len $e] > 0) do={ :set st [/tool netwatch get [:pick $e 0] status]; }`,
+        `:foreach e in=[/tool netwatch find where disabled=no] do={`,
+        `  :local h [:tostr [/tool netwatch get $e host]];`,
+        `  :local st [:tostr [/tool netwatch get $e status]];`,
         `  :if ($out != "") do={ :set out ($out . ","); }`,
-        `  :set out ($out . $id . ":" . $st);`,
+        `  :set out ($out . $h . ":" . $st);`,
         `}`,
         `:do { /tool fetch url="${batchBase()}/status/mikrotik.php${token}" http-method=post http-data=("batch=" . $out) keep-result=no; } on-error={ :log warning "NT-CCTV: batch sync failed"; }`,
       ].join("\n");

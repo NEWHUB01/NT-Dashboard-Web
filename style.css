@@ -929,6 +929,11 @@ button, input {
   line-height: 1.6;
 }
 .storage-warn i { margin-top: 2px; }
+.storage-warn.ok {
+  background: #e9f8f1;
+  border-color: #bfe6d4;
+  color: #17734b;
+}
 
 .code-block-head[hidden] {
   display: none;   /* display:flex ข้างล่างจะชนะ [hidden] ของเบราว์เซอร์ ถ้าไม่เขียนบรรทัดนี้ */

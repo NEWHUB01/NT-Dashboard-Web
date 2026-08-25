@@ -393,28 +393,46 @@ def batch_payload():
 def push_batch(raw, src):
     """รับสถานะหลายตัวในคำขอเดียว — อ่านทะเบียนครั้งเดียว เขียนกลับครั้งเดียว
     ไม่ว่าจะมีกี่อุปกรณ์ ต่างจากยิงแยกรายตัวที่กินโควตาฐานข้อมูลเป็นเท่าตัวตามจำนวนอุปกรณ์
-    รูปแบบ: 1:up,2:down,3:unknown
+
+    ตัวคั่นเป็น <คีย์>:<สถานะ> คั่นรายการด้วยจุลภาค คีย์เป็นได้ทั้ง
+      - หมายเลขไอดี  เช่น 1:up,2:down
+      - IP ของอุปกรณ์ เช่น 192.168.10.1:up,192.168.10.2:down
+    แบบ IP มีไว้ให้สคริปต์ MikroTik วนอ่านจาก Netwatch เองได้ จะได้ไม่ต้องฝังรายชื่อ
+    อุปกรณ์ไว้ในสคริปต์ แล้วต้องมา copy วางใหม่ทุกครั้งที่เพิ่มอุปกรณ์
     """
     store = load_devices()
+    devices = store["devices"]
     stamp = now_stamp()
+
+    # ดัชนี IP -> ไอดี (IP เดียวกันอาจผูกกับหลายรายการในทะเบียนได้ จึงเก็บเป็น list)
+    by_ip = {}
+    for dev_id, dev in devices.items():
+        ip = (dev.get("ip") or "").strip()
+        if ip:
+            by_ip.setdefault(ip, []).append(dev_id)
+
     applied, unknown, bad = 0, [], 0
 
     for part in raw.split(","):
-        dev_id, _, word = part.strip().partition(":")
-        dev_id = dev_id.strip()
-        if not dev_id:
+        # rpartition เพราะ host อาจเป็น IPv6 ที่มี ":" อยู่ข้างในเอง
+        key, _, word = part.strip().rpartition(":")
+        key = key.strip()
+        if not key:
             continue
         status = STATUS_ALIASES.get(word.strip().lower())
         if not status:
             bad += 1
             continue
-        dev = store["devices"].get(dev_id)
-        if not dev:
-            unknown.append(dev_id)
+        # ไอดีเป็นตัวเลขล้วนเสมอ อะไรที่มีจุดหรือทวิภาคคือ IP
+        targets = by_ip.get(key, []) if not key.isdigit() else ([key] if key in devices else [])
+        if not targets:
+            unknown.append(key)
             continue
-        dev["status"] = None if status == "unknown" else status
-        dev["last_seen"] = stamp
-        applied += 1
+        for dev_id in targets:
+            dev = devices[dev_id]
+            dev["status"] = None if status == "unknown" else status
+            dev["last_seen"] = stamp
+            applied += 1
 
     if applied:
         save_devices(store)      # เขียนทีเดียวสำหรับทั้งชุด
