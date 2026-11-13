@@ -326,21 +326,36 @@
     const regError = $("#regError");
     const regSuccess = $("#regSuccess");
 
-    function showToast(message, type = "success") {
-      let toast = $("#authToast");
-      if (!toast) {
-        toast = document.createElement("div");
-        toast.id = "authToast";
-        toast.className = "auth-toast";
-        document.body.appendChild(toast);
+    const authModal = $("#authModal");
+    const authModalTitle = $("#authModalTitle");
+    const authModalDesc = $("#authModalDesc");
+    const authModalIcon = $("#authModalIcon");
+
+    function showAuthModal(title, desc, type = "success") {
+      if (!authModal) return;
+      if (authModalTitle) authModalTitle.textContent = title;
+      if (authModalDesc) authModalDesc.textContent = desc;
+      if (authModalIcon) {
+        authModalIcon.className = `auth-modal-icon ${type}`;
+        authModalIcon.innerHTML = type === "error"
+          ? '<i class="fa-solid fa-circle-xmark"></i>'
+          : '<i class="fa-solid fa-circle-check"></i>';
       }
-      const iconClass = type === "error" ? "fa-circle-xmark" : "fa-circle-check";
-      toast.innerHTML = `<i class="fa-solid ${iconClass}"></i><span>${message}</span>`;
-      toast.hidden = false;
-      requestAnimationFrame(() => {
-        toast.classList.add("show");
-      });
+      authModal.hidden = false;
     }
+
+    function hideAuthModal() {
+      if (authModal) authModal.hidden = true;
+    }
+
+    // Reset modal and buttons on page show (e.g. browser back button from bfcache)
+    window.addEventListener("pageshow", () => {
+      hideAuthModal();
+      const loginBtn = loginForm.querySelector("button[type='submit']");
+      if (loginBtn) loginBtn.disabled = false;
+      const regBtn = registerForm.querySelector("button[type='submit']");
+      if (regBtn) regBtn.disabled = false;
+    });
 
     // Tab switching
     if (tabLoginBtn && tabRegisterBtn) {
@@ -349,6 +364,7 @@
         tabRegisterBtn.classList.remove("active");
         loginForm.hidden = false;
         registerForm.hidden = true;
+        hideAuthModal();
         loginError.textContent = "";
         if (loginSuccess) loginSuccess.style.display = "none";
         regError.textContent = "";
@@ -360,6 +376,7 @@
         tabLoginBtn.classList.remove("active");
         loginForm.hidden = true;
         registerForm.hidden = false;
+        hideAuthModal();
         loginError.textContent = "";
         if (loginSuccess) loginSuccess.style.display = "none";
         regError.textContent = "";
@@ -389,15 +406,11 @@
         if (res.ok) {
           const store = remember ? localStorage : sessionStorage;
           store.setItem(LS_UI_AUTH, "1");
-          showToast("เข้าสู่ระบบสำเร็จ กำลังพาไปยังแดชบอร์ด...");
-          if (loginSuccess) {
-            loginSuccess.textContent = "เข้าสู่ระบบสำเร็จ! กำลังเข้าสู่ระบบ...";
-            loginSuccess.style.display = "block";
-          }
+          showAuthModal("เข้าสู่ระบบสำเร็จ", "กำลังพาคุณไปยังหน้าแดชบอร์ด...");
           if (submitBtn) submitBtn.disabled = true;
           setTimeout(() => {
-            window.location.href = "dashboard.html";
-          }, 800);
+            window.location.replace("dashboard.html");
+          }, 850);
         } else if (res.status === 401) {
           loginError.textContent = "ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง";
         } else {
@@ -449,12 +462,10 @@
         const data = await res.json().catch(() => ({}));
         if (res.ok) {
           sessionStorage.setItem(LS_UI_AUTH, "1");
-          showToast("สร้างบัญชีสำเร็จ กำลังพาไปยังแดชบอร์ด...");
-          regSuccess.textContent = "สร้างบัญชีสำเร็จ! กำลังเข้าสู่ระบบ...";
-          regSuccess.style.display = "block";
+          showAuthModal("สร้างบัญชีสำเร็จ", "กำลังพาคุณไปยังหน้าแดชบอร์ด...");
           setTimeout(() => {
-            window.location.href = "dashboard.html";
-          }, 800);
+            window.location.replace("dashboard.html");
+          }, 850);
         } else {
           regError.textContent = data.error || "เกิดข้อผิดพลาดในการสร้างบัญชี";
           if (submitBtn) submitBtn.disabled = false;

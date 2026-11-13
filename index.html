@@ -21,7 +21,21 @@
 </head>
 <body>
 
-<div class="auth-toast" id="authToast" role="alert" aria-live="assertive" hidden></div>
+<!-- Auth Notification Modal -->
+<div class="modal-overlay" id="authModal" hidden>
+  <div class="modal modal-sm auth-modal">
+    <div class="auth-modal-body">
+      <div class="auth-modal-icon success" id="authModalIcon">
+        <i class="fa-solid fa-circle-check"></i>
+      </div>
+      <h2 class="auth-modal-title" id="authModalTitle">เข้าสู่ระบบสำเร็จ</h2>
+      <p class="auth-modal-desc" id="authModalDesc">กำลังพาคุณไปยังหน้าแดชบอร์ด...</p>
+      <div class="auth-modal-spinner">
+        <i class="fa-solid fa-circle-notch fa-spin"></i>
+      </div>
+    </div>
+  </div>
+</div>
 
 <div class="login-wrap">
   <div class="login-card">
