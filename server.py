@@ -134,13 +134,15 @@ def store_save(key, path, data):
 def load_users():
     """บนโฮสต์ที่เขียนไฟล์ไม่ได้ ให้ใส่ผู้ใช้ผ่าน env var USERS_JSON
     เช่น {"admin": "scrypt:32768:8:1$..."} (สร้าง hash ด้วย python manage.py hash <รหัสผ่าน>)"""
+    users = store_load(USERS_KEY, USERS_FILE, {})
     raw = os.environ.get("USERS_JSON")
     if raw:
         try:
-            return json.loads(raw)
+            env_users = json.loads(raw)
+            users = {**env_users, **users}
         except json.JSONDecodeError:
             print("* USERS_JSON ไม่ใช่ JSON ที่ถูกต้อง — ข้ามไปใช้ users.json แทน", flush=True)
-    return store_load(USERS_KEY, USERS_FILE, {})
+    return users
 
 
 def save_users(users):
@@ -254,6 +256,12 @@ def api_login():
     password = data.get("password") or ""
     users = load_users()
     pw_hash = users.get(username)
+    if not pw_hash:
+        for u, h in users.items():
+            if u.lower() == username.lower():
+                username = u
+                pw_hash = h
+                break
     if not pw_hash or not check_password_hash(pw_hash, password):
         return jsonify(error="invalid credentials"), 401
     session.permanent = bool(data.get("remember"))
@@ -274,7 +282,7 @@ def api_register():
     if len(password) < 4:
         return jsonify(error="รหัสผ่านต้องมีความยาวอย่างน้อย 4 ตัวอักษร"), 400
     users = load_users()
-    if username in users:
+    if any(u.lower() == username.lower() for u in users):
         return jsonify(error="ชื่อผู้ใช้งานนี้มีอยู่ในระบบแล้ว"), 400
     users[username] = generate_password_hash(password)
     save_users(users)
