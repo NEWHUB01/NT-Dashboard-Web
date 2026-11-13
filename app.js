@@ -322,8 +322,25 @@
 
   if (loginForm && registerForm) {
     const loginError = $("#loginError");
+    const loginSuccess = $("#loginSuccess");
     const regError = $("#regError");
     const regSuccess = $("#regSuccess");
+
+    function showToast(message, type = "success") {
+      let toast = $("#authToast");
+      if (!toast) {
+        toast = document.createElement("div");
+        toast.id = "authToast";
+        toast.className = "auth-toast";
+        document.body.appendChild(toast);
+      }
+      const iconClass = type === "error" ? "fa-circle-xmark" : "fa-circle-check";
+      toast.innerHTML = `<i class="fa-solid ${iconClass}"></i><span>${message}</span>`;
+      toast.hidden = false;
+      requestAnimationFrame(() => {
+        toast.classList.add("show");
+      });
+    }
 
     // Tab switching
     if (tabLoginBtn && tabRegisterBtn) {
@@ -333,6 +350,7 @@
         loginForm.hidden = false;
         registerForm.hidden = true;
         loginError.textContent = "";
+        if (loginSuccess) loginSuccess.style.display = "none";
         regError.textContent = "";
         regSuccess.style.display = "none";
       });
@@ -343,6 +361,7 @@
         loginForm.hidden = true;
         registerForm.hidden = false;
         loginError.textContent = "";
+        if (loginSuccess) loginSuccess.style.display = "none";
         regError.textContent = "";
         regSuccess.style.display = "none";
       });
@@ -352,9 +371,13 @@
     loginForm.addEventListener("submit", async (e) => {
       e.preventDefault();
       loginError.textContent = "";
+      if (loginSuccess) loginSuccess.style.display = "none";
+
       const username = $("#loginUser").value.trim();
       const password = $("#loginPass").value;
       const remember = $("#loginRemember").checked;
+
+      const submitBtn = loginForm.querySelector("button[type='submit']");
 
       try {
         const res = await fetch("/api/login", {
@@ -366,7 +389,15 @@
         if (res.ok) {
           const store = remember ? localStorage : sessionStorage;
           store.setItem(LS_UI_AUTH, "1");
-          window.location.href = "dashboard.html";
+          showToast("เข้าสู่ระบบสำเร็จ กำลังพาไปยังแดชบอร์ด...");
+          if (loginSuccess) {
+            loginSuccess.textContent = "เข้าสู่ระบบสำเร็จ! กำลังเข้าสู่ระบบ...";
+            loginSuccess.style.display = "block";
+          }
+          if (submitBtn) submitBtn.disabled = true;
+          setTimeout(() => {
+            window.location.href = "dashboard.html";
+          }, 800);
         } else if (res.status === 401) {
           loginError.textContent = "ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง";
         } else {
@@ -418,6 +449,7 @@
         const data = await res.json().catch(() => ({}));
         if (res.ok) {
           sessionStorage.setItem(LS_UI_AUTH, "1");
+          showToast("สร้างบัญชีสำเร็จ กำลังพาไปยังแดชบอร์ด...");
           regSuccess.textContent = "สร้างบัญชีสำเร็จ! กำลังเข้าสู่ระบบ...";
           regSuccess.style.display = "block";
           setTimeout(() => {

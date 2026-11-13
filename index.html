@@ -21,6 +21,8 @@
 </head>
 <body>
 
+<div class="auth-toast" id="authToast" role="alert" aria-live="assertive" hidden></div>
+
 <div class="login-wrap">
   <div class="login-card">
     <div class="login-logo">
@@ -61,7 +63,8 @@
 
       <button type="submit" class="btn-primary btn-block">เข้าสู่ระบบ</button>
       <p class="login-error" id="loginError"></p>
-      <p class="login-hint">ค่าเริ่มต้น: admin / admin (เพิ่ม/เปลี่ยนผู้ใช้: python manage.py)</p>
+      <p class="login-success" id="loginSuccess" style="display:none;"></p>
+      <p class="login-hint">ค่าเริ่มต้น: admin / admin</p>
     </form>
 
     <!-- Register Form -->

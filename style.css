@@ -208,6 +208,69 @@ button, input {
   margin-top: 14px;
 }
 
+/* Toast Notification */
+.auth-toast {
+  position: fixed;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-20px);
+  background: #ffffff;
+  color: var(--text-dark);
+  border-left: 4px solid var(--green);
+  padding: 13px 20px;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(20, 25, 80, 0.15), 0 2px 6px rgba(0, 0, 0, 0.06);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14.5px;
+  font-weight: 600;
+  z-index: 9999;
+  opacity: 0;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+  max-width: 90vw;
+  box-sizing: border-box;
+}
+.auth-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+.auth-toast i {
+  color: var(--green);
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 480px) {
+  .login-wrap {
+    padding: 14px;
+  }
+  .login-card {
+    padding: 28px 20px 22px;
+    border-radius: 16px;
+    max-width: 100%;
+  }
+  .login-logo {
+    margin-bottom: 18px;
+    font-size: 17px;
+  }
+  .login-card h1 {
+    font-size: 20px;
+  }
+  .auth-tabs {
+    margin-bottom: 18px;
+  }
+  .auth-toast {
+    top: 14px;
+    width: calc(100% - 28px);
+    max-width: calc(100% - 28px);
+    font-size: 13.5px;
+    padding: 11px 14px;
+    justify-content: center;
+  }
+}
+
 /* ===================== APP LAYOUT ===================== */
 .app-wrap {
   display: flex;
