@@ -22,39 +22,82 @@
 <body>
 
 <div class="login-wrap">
-  <form id="loginForm" class="login-card">
+  <div class="login-card">
     <div class="login-logo">
       <i class="fa-solid fa-video"></i>
       <span>NT <b>CCTV</b></span>
     </div>
-    <h1>เข้าสู่ระบบ</h1>
-    <p class="login-sub">กรอกข้อมูลเพื่อเข้าใช้งานแผงควบคุม</p>
 
-    <label class="field">
-      <span>ชื่อผู้ใช้งาน</span>
-      <div class="field-input">
-        <i class="fa-solid fa-user"></i>
-        <input type="text" id="loginUser" placeholder="admin" autocomplete="username" required />
-      </div>
-    </label>
+    <div class="auth-tabs">
+      <button type="button" class="auth-tab active" id="tabLoginBtn">เข้าสู่ระบบ</button>
+      <button type="button" class="auth-tab" id="tabRegisterBtn">สร้างบัญชีใหม่</button>
+    </div>
 
-    <label class="field">
-      <span>รหัสผ่าน</span>
-      <div class="field-input">
-        <i class="fa-solid fa-lock"></i>
-        <input type="password" id="loginPass" placeholder="••••••••" autocomplete="current-password" required />
-      </div>
-    </label>
+    <!-- Login Form -->
+    <form id="loginForm">
+      <h1>เข้าสู่ระบบ</h1>
+      <p class="login-sub">กรอกข้อมูลเพื่อเข้าใช้งานแผงควบคุม</p>
 
-    <label class="remember">
-      <input type="checkbox" id="loginRemember" />
-      <span>จดจำการเข้าสู่ระบบ</span>
-    </label>
+      <label class="field">
+        <span>ชื่อผู้ใช้งาน</span>
+        <div class="field-input">
+          <i class="fa-solid fa-user"></i>
+          <input type="text" id="loginUser" placeholder="admin" autocomplete="username" required />
+        </div>
+      </label>
 
-    <button type="submit" class="btn-primary btn-block">เข้าสู่ระบบ</button>
-    <p class="login-error" id="loginError"></p>
-    <p class="login-hint">ค่าเริ่มต้น: admin / admin (เพิ่ม/เปลี่ยนผู้ใช้: python manage.py)</p>
-  </form>
+      <label class="field">
+        <span>รหัสผ่าน</span>
+        <div class="field-input">
+          <i class="fa-solid fa-lock"></i>
+          <input type="password" id="loginPass" placeholder="••••••••" autocomplete="current-password" required />
+        </div>
+      </label>
+
+      <label class="remember">
+        <input type="checkbox" id="loginRemember" />
+        <span>จดจำการเข้าสู่ระบบ</span>
+      </label>
+
+      <button type="submit" class="btn-primary btn-block">เข้าสู่ระบบ</button>
+      <p class="login-error" id="loginError"></p>
+      <p class="login-hint">ค่าเริ่มต้น: admin / admin (เพิ่ม/เปลี่ยนผู้ใช้: python manage.py)</p>
+    </form>
+
+    <!-- Register Form -->
+    <form id="registerForm" hidden>
+      <h1>สร้างบัญชีใหม่</h1>
+      <p class="login-sub">กำหนดชื่อผู้ใช้และรหัสผ่านเพื่อเข้าใช้งาน</p>
+
+      <label class="field">
+        <span>ชื่อผู้ใช้งาน</span>
+        <div class="field-input">
+          <i class="fa-solid fa-user"></i>
+          <input type="text" id="regUser" placeholder="ระบุชื่อผู้ใช้งาน" autocomplete="username" required />
+        </div>
+      </label>
+
+      <label class="field">
+        <span>รหัสผ่าน</span>
+        <div class="field-input">
+          <i class="fa-solid fa-lock"></i>
+          <input type="password" id="regPass" placeholder="อย่างน้อย 4 ตัวอักษร" autocomplete="new-password" required />
+        </div>
+      </label>
+
+      <label class="field">
+        <span>ยืนยันรหัสผ่าน</span>
+        <div class="field-input">
+          <i class="fa-solid fa-check-double"></i>
+          <input type="password" id="regPassConfirm" placeholder="กรอกรหัสผ่านซ้ำอีกครั้ง" autocomplete="new-password" required />
+        </div>
+      </label>
+
+      <button type="submit" class="btn-primary btn-block">สร้างบัญชีผู้ใช้</button>
+      <p class="login-error" id="regError"></p>
+      <p class="login-success" id="regSuccess" style="display:none;"></p>
+    </form>
+  </div>
 </div>
 
 <script src="app.js"></script>

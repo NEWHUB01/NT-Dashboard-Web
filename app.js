@@ -313,11 +313,42 @@
   }
 
   // ---------------------------------------------------------------
-  // LOGIN PAGE (index.html)
+  // LOGIN & REGISTER PAGE (index.html)
   // ---------------------------------------------------------------
   const loginForm = $("#loginForm");
-  if (loginForm) {
+  const registerForm = $("#registerForm");
+  const tabLoginBtn = $("#tabLoginBtn");
+  const tabRegisterBtn = $("#tabRegisterBtn");
+
+  if (loginForm && registerForm) {
     const loginError = $("#loginError");
+    const regError = $("#regError");
+    const regSuccess = $("#regSuccess");
+
+    // Tab switching
+    if (tabLoginBtn && tabRegisterBtn) {
+      tabLoginBtn.addEventListener("click", () => {
+        tabLoginBtn.classList.add("active");
+        tabRegisterBtn.classList.remove("active");
+        loginForm.hidden = false;
+        registerForm.hidden = true;
+        loginError.textContent = "";
+        regError.textContent = "";
+        regSuccess.style.display = "none";
+      });
+
+      tabRegisterBtn.addEventListener("click", () => {
+        tabRegisterBtn.classList.add("active");
+        tabLoginBtn.classList.remove("active");
+        loginForm.hidden = true;
+        registerForm.hidden = false;
+        loginError.textContent = "";
+        regError.textContent = "";
+        regSuccess.style.display = "none";
+      });
+    }
+
+    // Login submit
     loginForm.addEventListener("submit", async (e) => {
       e.preventDefault();
       loginError.textContent = "";
@@ -343,6 +374,62 @@
         }
       } catch {
         loginError.textContent = "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ (ต้องรันด้วย python server.py)";
+      }
+    });
+
+    // Register submit
+    registerForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      regError.textContent = "";
+      regSuccess.style.display = "none";
+      regSuccess.textContent = "";
+
+      const username = $("#regUser").value.trim();
+      const password = $("#regPass").value;
+      const confirm = $("#regPassConfirm").value;
+
+      if (!username) {
+        regError.textContent = "กรุณากรอกชื่อผู้ใช้งาน";
+        return;
+      }
+      if (!password) {
+        regError.textContent = "กรุณากรอกรหัสผ่าน";
+        return;
+      }
+      if (password.length < 4) {
+        regError.textContent = "รหัสผ่านต้องมีความยาวอย่างน้อย 4 ตัวอักษร";
+        return;
+      }
+      if (password !== confirm) {
+        regError.textContent = "รหัสผ่านและการยืนยันรหัสผ่านไม่ตรงกัน";
+        return;
+      }
+
+      const submitBtn = registerForm.querySelector("button[type='submit']");
+      if (submitBtn) submitBtn.disabled = true;
+
+      try {
+        const res = await fetch("/api/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({ username, password }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok) {
+          sessionStorage.setItem(LS_UI_AUTH, "1");
+          regSuccess.textContent = "สร้างบัญชีสำเร็จ! กำลังเข้าสู่ระบบ...";
+          regSuccess.style.display = "block";
+          setTimeout(() => {
+            window.location.href = "dashboard.html";
+          }, 800);
+        } else {
+          regError.textContent = data.error || "เกิดข้อผิดพลาดในการสร้างบัญชี";
+          if (submitBtn) submitBtn.disabled = false;
+        }
+      } catch {
+        regError.textContent = "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ (ต้องรันด้วย python server.py)";
+        if (submitBtn) submitBtn.disabled = false;
       }
     });
   }

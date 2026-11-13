@@ -35,6 +35,7 @@ DEVICES_FILE = BASE / "devices.json"
 # คีย์ที่ใช้เก็บบน Redis เมื่อรันแบบ serverless
 DEVICES_KEY = "ntcctv:devices"
 CONFIG_KEY = "ntcctv:config"
+USERS_KEY = "ntcctv:users"
 
 CATEGORY_KEYS = ["recorder", "camera", "transmitter", "receiver", "router", "accesspoint"]
 
@@ -139,7 +140,11 @@ def load_users():
             return json.loads(raw)
         except json.JSONDecodeError:
             print("* USERS_JSON ไม่ใช่ JSON ที่ถูกต้อง — ข้ามไปใช้ users.json แทน", flush=True)
-    return load_json(USERS_FILE, {})
+    return store_load(USERS_KEY, USERS_FILE, {})
+
+
+def save_users(users):
+    store_save(USERS_KEY, USERS_FILE, users)
 
 
 def load_config():
@@ -252,6 +257,28 @@ def api_login():
     if not pw_hash or not check_password_hash(pw_hash, password):
         return jsonify(error="invalid credentials"), 401
     session.permanent = bool(data.get("remember"))
+    session["user"] = username
+    return jsonify(ok=True, user=username)
+
+
+@app.post("/api/register")
+@serialized
+def api_register():
+    data = request.get_json(silent=True) or {}
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+    if not username:
+        return jsonify(error="กรุณากรอกชื่อผู้ใช้งาน"), 400
+    if not password:
+        return jsonify(error="กรุณากรอกรหัสผ่าน"), 400
+    if len(password) < 4:
+        return jsonify(error="รหัสผ่านต้องมีความยาวอย่างน้อย 4 ตัวอักษร"), 400
+    users = load_users()
+    if username in users:
+        return jsonify(error="ชื่อผู้ใช้งานนี้มีอยู่ในระบบแล้ว"), 400
+    users[username] = generate_password_hash(password)
+    save_users(users)
+    session.permanent = False
     session["user"] = username
     return jsonify(ok=True, user=username)
 
