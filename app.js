@@ -357,6 +357,24 @@
       if (regBtn) regBtn.disabled = false;
     });
 
+    // Toggle show/hide password buttons
+    document.querySelectorAll(".btn-toggle-pw").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const input = btn.closest(".field-input")?.querySelector("input");
+        const icon = btn.querySelector("i");
+        if (!input || !icon) return;
+        if (input.type === "password") {
+          input.type = "text";
+          icon.classList.remove("fa-eye");
+          icon.classList.add("fa-eye-slash");
+        } else {
+          input.type = "password";
+          icon.classList.remove("fa-eye-slash");
+          icon.classList.add("fa-eye");
+        }
+      });
+    });
+
     // Tab switching
     if (tabLoginBtn && tabRegisterBtn) {
       tabLoginBtn.addEventListener("click", () => {
