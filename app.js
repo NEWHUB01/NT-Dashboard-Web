@@ -176,6 +176,7 @@
         const res = await api("/api/config");
         if (res.ok) $("#staleMinutes").value = (await res.json()).staleMinutes;
       } catch {}
+      checkAdminAndLoadUsers();
     }
 
     function close() {
@@ -309,22 +310,176 @@
       }
     });
 
+    // -------- จัดการผู้ใช้งาน (เฉพาะ Admin) --------
+    const userSection = $("#userSection");
+    const userListEl = $("#settingsUserList");
+    const newUsernameInput = $("#newUsername");
+    const newPasswordInput = $("#newPassword");
+    const addUserBtn = $("#addUserBtn");
+    const addUserError = $("#addUserError");
+    const addUserSuccess = $("#addUserSuccess");
+
+    async function checkAdminAndLoadUsers() {
+      if (!userSection) return;
+      try {
+        const meRes = await api("/api/me");
+        if (!meRes.ok) return;
+        const meData = await meRes.json();
+        if (meData.isAdmin) {
+          userSection.hidden = false;
+          await loadUsersList();
+        } else {
+          userSection.hidden = true;
+        }
+      } catch {
+        userSection.hidden = true;
+      }
+    }
+
+    async function loadUsersList() {
+      if (!userListEl) return;
+      userListEl.innerHTML = '<div style="color:var(--text-light);font-size:12.5px;padding:6px;">กำลังโหลดรายชื่อ...</div>';
+      try {
+        const res = await api("/api/users");
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const data = await res.json();
+        const users = data.users || [];
+        userListEl.innerHTML = "";
+        if (users.length === 0) {
+          userListEl.innerHTML = '<div style="color:var(--text-light);font-size:12.5px;padding:6px;">ไม่มีผู้ใช้</div>';
+          return;
+        }
+
+        users.forEach((u) => {
+          const row = document.createElement("div");
+          row.className = "user-row";
+
+          const info = document.createElement("div");
+          info.className = "user-info";
+
+          const icon = document.createElement("i");
+          icon.className = "fa-solid fa-user";
+          info.appendChild(icon);
+
+          const nameSpan = document.createElement("span");
+          nameSpan.textContent = u.username;
+          info.appendChild(nameSpan);
+
+          if (u.isAdmin) {
+            const badge = document.createElement("span");
+            badge.className = "badge-admin";
+            badge.textContent = "Admin";
+            info.appendChild(badge);
+          }
+          row.appendChild(info);
+
+          if (!u.isAdmin) {
+            const delBtn = document.createElement("button");
+            delBtn.type = "button";
+            delBtn.className = "btn-del-user";
+            delBtn.title = `ลบผู้ใช้ ${u.username}`;
+            delBtn.innerHTML = '<i class="fa-solid fa-trash-can"></i>';
+            delBtn.addEventListener("click", async () => {
+              if (!confirm(`คุณต้องการลบผู้ใช้ "${u.username}" ใช่หรือไม่?`)) return;
+              try {
+                const delRes = await api(`/api/users/${encodeURIComponent(u.username)}`, {
+                  method: "DELETE",
+                });
+                const delData = await delRes.json().catch(() => ({}));
+                if (delRes.ok) {
+                  await loadUsersList();
+                } else {
+                  alert(delData.error || "ลบผู้ใช้ไม่สำเร็จ");
+                }
+              } catch {
+                alert("เชื่อมต่อเซิร์ฟเวอร์ไม่ได้");
+              }
+            });
+            row.appendChild(delBtn);
+          }
+
+          userListEl.appendChild(row);
+        });
+      } catch {
+        userListEl.innerHTML = '<div style="color:var(--red);font-size:12.5px;padding:6px;">โหลดรายชื่อไม่สำเร็จ</div>';
+      }
+    }
+
+    if (addUserBtn) {
+      addUserBtn.addEventListener("click", async () => {
+        if (addUserError) addUserError.textContent = "";
+        if (addUserSuccess) addUserSuccess.style.display = "none";
+        const username = (newUsernameInput?.value || "").trim();
+        const password = newPasswordInput?.value || "";
+
+        if (!username) {
+          if (addUserError) addUserError.textContent = "กรุณากรอกชื่อผู้ใช้งาน";
+          return;
+        }
+        if (!password) {
+          if (addUserError) addUserError.textContent = "กรุณากรอกรหัสผ่าน";
+          return;
+        }
+        if (password.length < 4) {
+          if (addUserError) addUserError.textContent = "รหัสผ่านต้องมีความยาวอย่างน้อย 4 ตัวอักษร";
+          return;
+        }
+
+        addUserBtn.disabled = true;
+        try {
+          const res = await api("/api/users", {
+            method: "POST",
+            body: JSON.stringify({ username, password }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.ok) {
+            if (newUsernameInput) newUsernameInput.value = "";
+            if (newPasswordInput) newPasswordInput.value = "";
+            if (addUserSuccess) {
+              addUserSuccess.textContent = `เพิ่มผู้ใช้ "${username}" เรียบร้อยแล้ว`;
+              addUserSuccess.style.display = "block";
+            }
+            await loadUsersList();
+          } else {
+            if (addUserError) addUserError.textContent = data.error || "เพิ่มผู้ใช้ไม่สำเร็จ";
+          }
+        } catch {
+          if (addUserError) addUserError.textContent = "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้";
+        } finally {
+          addUserBtn.disabled = false;
+        }
+      });
+    }
+
     return { open, close, modal };
   }
 
+  // Toggle show/hide password buttons globally
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest(".btn-toggle-pw");
+    if (!btn) return;
+    const input = btn.closest(".field-input")?.querySelector("input");
+    const icon = btn.querySelector("i");
+    if (!input || !icon) return;
+    if (input.type === "password") {
+      input.type = "text";
+      icon.classList.remove("fa-eye");
+      icon.classList.add("fa-eye-slash");
+    } else {
+      input.type = "password";
+      icon.classList.remove("fa-eye-slash");
+      icon.classList.add("fa-eye");
+    }
+  });
+
   // ---------------------------------------------------------------
-  // LOGIN & REGISTER PAGE (index.html)
+  // LOGIN PAGE (index.html)
   // ---------------------------------------------------------------
   const loginForm = $("#loginForm");
-  const registerForm = $("#registerForm");
-  const tabLoginBtn = $("#tabLoginBtn");
-  const tabRegisterBtn = $("#tabRegisterBtn");
 
-  if (loginForm && registerForm) {
+  if (loginForm) {
     const loginError = $("#loginError");
     const loginSuccess = $("#loginSuccess");
-    const regError = $("#regError");
-    const regSuccess = $("#regSuccess");
 
     const authModal = $("#authModal");
     const authModalTitle = $("#authModalTitle");
@@ -353,54 +508,7 @@
       hideAuthModal();
       const loginBtn = loginForm.querySelector("button[type='submit']");
       if (loginBtn) loginBtn.disabled = false;
-      const regBtn = registerForm.querySelector("button[type='submit']");
-      if (regBtn) regBtn.disabled = false;
     });
-
-    // Toggle show/hide password buttons
-    document.querySelectorAll(".btn-toggle-pw").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const input = btn.closest(".field-input")?.querySelector("input");
-        const icon = btn.querySelector("i");
-        if (!input || !icon) return;
-        if (input.type === "password") {
-          input.type = "text";
-          icon.classList.remove("fa-eye");
-          icon.classList.add("fa-eye-slash");
-        } else {
-          input.type = "password";
-          icon.classList.remove("fa-eye-slash");
-          icon.classList.add("fa-eye");
-        }
-      });
-    });
-
-    // Tab switching
-    if (tabLoginBtn && tabRegisterBtn) {
-      tabLoginBtn.addEventListener("click", () => {
-        tabLoginBtn.classList.add("active");
-        tabRegisterBtn.classList.remove("active");
-        loginForm.hidden = false;
-        registerForm.hidden = true;
-        hideAuthModal();
-        loginError.textContent = "";
-        if (loginSuccess) loginSuccess.style.display = "none";
-        regError.textContent = "";
-        regSuccess.style.display = "none";
-      });
-
-      tabRegisterBtn.addEventListener("click", () => {
-        tabRegisterBtn.classList.add("active");
-        tabLoginBtn.classList.remove("active");
-        loginForm.hidden = true;
-        registerForm.hidden = false;
-        hideAuthModal();
-        loginError.textContent = "";
-        if (loginSuccess) loginSuccess.style.display = "none";
-        regError.textContent = "";
-        regSuccess.style.display = "none";
-      });
-    }
 
     // Login submit
     loginForm.addEventListener("submit", async (e) => {
@@ -436,61 +544,6 @@
         }
       } catch {
         loginError.textContent = "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ (ต้องรันด้วย python server.py)";
-      }
-    });
-
-    // Register submit
-    registerForm.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      regError.textContent = "";
-      regSuccess.style.display = "none";
-      regSuccess.textContent = "";
-
-      const username = $("#regUser").value.trim();
-      const password = $("#regPass").value;
-      const confirm = $("#regPassConfirm").value;
-
-      if (!username) {
-        regError.textContent = "กรุณากรอกชื่อผู้ใช้งาน";
-        return;
-      }
-      if (!password) {
-        regError.textContent = "กรุณากรอกรหัสผ่าน";
-        return;
-      }
-      if (password.length < 4) {
-        regError.textContent = "รหัสผ่านต้องมีความยาวอย่างน้อย 4 ตัวอักษร";
-        return;
-      }
-      if (password !== confirm) {
-        regError.textContent = "รหัสผ่านและการยืนยันรหัสผ่านไม่ตรงกัน";
-        return;
-      }
-
-      const submitBtn = registerForm.querySelector("button[type='submit']");
-      if (submitBtn) submitBtn.disabled = true;
-
-      try {
-        const res = await fetch("/api/register", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "same-origin",
-          body: JSON.stringify({ username, password }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (res.ok) {
-          sessionStorage.setItem(LS_UI_AUTH, "1");
-          showAuthModal("สร้างบัญชีสำเร็จ", "กำลังพาคุณไปยังหน้าแดชบอร์ด...");
-          setTimeout(() => {
-            window.location.replace("dashboard.html");
-          }, 850);
-        } else {
-          regError.textContent = data.error || "เกิดข้อผิดพลาดในการสร้างบัญชี";
-          if (submitBtn) submitBtn.disabled = false;
-        }
-      } catch {
-        regError.textContent = "เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ (ต้องรันด้วย python server.py)";
-        if (submitBtn) submitBtn.disabled = false;
       }
     });
   }

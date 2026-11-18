@@ -44,11 +44,6 @@
       <span>NT <b>CCTV</b></span>
     </div>
 
-    <div class="auth-tabs">
-      <button type="button" class="auth-tab active" id="tabLoginBtn">เข้าสู่ระบบ</button>
-      <button type="button" class="auth-tab" id="tabRegisterBtn">สร้างบัญชีใหม่</button>
-    </div>
-
     <!-- Login Form -->
     <form id="loginForm">
       <h1>เข้าสู่ระบบ</h1>
@@ -82,46 +77,6 @@
       <p class="login-error" id="loginError"></p>
       <p class="login-success" id="loginSuccess" style="display:none;"></p>
       <p class="login-hint">ค่าเริ่มต้น: admin / admin</p>
-    </form>
-
-    <!-- Register Form -->
-    <form id="registerForm" hidden>
-      <h1>สร้างบัญชีใหม่</h1>
-      <p class="login-sub">กำหนดชื่อผู้ใช้และรหัสผ่านเพื่อเข้าใช้งาน</p>
-
-      <label class="field">
-        <span>ชื่อผู้ใช้งาน</span>
-        <div class="field-input">
-          <i class="fa-solid fa-user"></i>
-          <input type="text" id="regUser" placeholder="ระบุชื่อผู้ใช้งาน" autocomplete="username" required />
-        </div>
-      </label>
-
-      <label class="field">
-        <span>รหัสผ่าน</span>
-        <div class="field-input">
-          <i class="fa-solid fa-lock"></i>
-          <input type="password" id="regPass" placeholder="อย่างน้อย 4 ตัวอักษร" autocomplete="new-password" required />
-          <button type="button" class="btn-toggle-pw" title="แสดง/ซ่อนรหัสผ่าน" aria-label="แสดง/ซ่อนรหัสผ่าน">
-            <i class="fa-solid fa-eye"></i>
-          </button>
-        </div>
-      </label>
-
-      <label class="field">
-        <span>ยืนยันรหัสผ่าน</span>
-        <div class="field-input">
-          <i class="fa-solid fa-check-double"></i>
-          <input type="password" id="regPassConfirm" placeholder="กรอกรหัสผ่านซ้ำอีกครั้ง" autocomplete="new-password" required />
-          <button type="button" class="btn-toggle-pw" title="แสดง/ซ่อนรหัสผ่าน" aria-label="แสดง/ซ่อนรหัสผ่าน">
-            <i class="fa-solid fa-eye"></i>
-          </button>
-        </div>
-      </label>
-
-      <button type="submit" class="btn-primary btn-block">สร้างบัญชีผู้ใช้</button>
-      <p class="login-error" id="regError"></p>
-      <p class="login-success" id="regSuccess" style="display:none;"></p>
     </form>
   </div>
 </div>

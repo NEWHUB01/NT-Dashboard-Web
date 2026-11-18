@@ -248,6 +248,17 @@ def login_required(fn):
     return wrapper
 
 
+def admin_required(fn):
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        if not session.get("user"):
+            return jsonify(error="unauthorized"), 401
+        if session.get("user") != "admin":
+            return jsonify(error="forbidden"), 403
+        return fn(*args, **kwargs)
+    return wrapper
+
+
 # ---------------- auth ----------------
 @app.post("/api/login")
 def api_login():
@@ -269,9 +280,36 @@ def api_login():
     return jsonify(ok=True, user=username)
 
 
-@app.post("/api/register")
+@app.post("/api/logout")
+def api_logout():
+    session.clear()
+    return jsonify(ok=True)
+
+
+@app.get("/api/me")
+def api_me():
+    user = session.get("user")
+    if not user:
+        return jsonify(error="unauthorized"), 401
+    return jsonify(user=user, isAdmin=(user == "admin"))
+
+
+# ---------------- user management (admin only) ----------------
+@app.get("/api/users")
+@admin_required
+def api_get_users():
+    users = load_users()
+    user_list = [
+        {"username": u, "isAdmin": (u == "admin")}
+        for u in sorted(users.keys(), key=lambda x: (x != "admin", x.lower()))
+    ]
+    return jsonify(users=user_list)
+
+
+@app.post("/api/users")
+@admin_required
 @serialized
-def api_register():
+def api_add_user():
     data = request.get_json(silent=True) or {}
     username = (data.get("username") or "").strip()
     password = data.get("password") or ""
@@ -286,22 +324,29 @@ def api_register():
         return jsonify(error="ชื่อผู้ใช้งานนี้มีอยู่ในระบบแล้ว"), 400
     users[username] = generate_password_hash(password)
     save_users(users)
-    session.permanent = False
-    session["user"] = username
     return jsonify(ok=True, user=username)
 
 
-@app.post("/api/logout")
-def api_logout():
-    session.clear()
+@app.delete("/api/users/<username>")
+@admin_required
+@serialized
+def api_del_user(username):
+    username = (username or "").strip()
+    if username == "admin":
+        return jsonify(error="ไม่สามารถลบบัญชี admin หลักได้"), 400
+    if username == session.get("user"):
+        return jsonify(error="ไม่สามารถลบบัญชีที่กำลังล็อกอินอยู่ได้"), 400
+    users = load_users()
+    target = None
+    for u in users:
+        if u.lower() == username.lower():
+            target = u
+            break
+    if not target or target == "admin":
+        return jsonify(error="ไม่พบบัญชีผู้ใช้นี้ หรือไม่สามารถลบได้"), 404
+    del users[target]
+    save_users(users)
     return jsonify(ok=True)
-
-
-@app.get("/api/me")
-def api_me():
-    if not session.get("user"):
-        return jsonify(error="unauthorized"), 401
-    return jsonify(user=session["user"])
 
 
 # ---------------- device registry + MikroTik Netwatch ----------------

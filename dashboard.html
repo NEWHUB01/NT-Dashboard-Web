@@ -195,6 +195,38 @@
         <p class="login-error" id="backupMsg"></p>
       </div>
 
+      <!-- User Management (Admin Only) -->
+      <div class="settings-section" id="userSection" hidden>
+        <div class="settings-section-title"><i class="fa-solid fa-users-gear"></i> จัดการผู้ใช้งาน (เฉพาะ Admin)</div>
+        <p class="code-hint">
+          รายชื่อผู้ใช้ที่สามารถเข้าสู่ระบบแผงควบคุมนี้ได้
+        </p>
+
+        <div class="user-list" id="settingsUserList"></div>
+
+        <div class="add-user-box">
+          <div class="settings-section-title" style="margin-bottom: 8px;">เพิ่มผู้ใช้งานใหม่</div>
+          <div class="add-user-grid">
+            <div class="field-input">
+              <i class="fa-solid fa-user"></i>
+              <input type="text" id="newUsername" placeholder="ชื่อผู้ใช้งาน" autocomplete="off" />
+            </div>
+            <div class="field-input">
+              <i class="fa-solid fa-lock"></i>
+              <input type="password" id="newPassword" placeholder="รหัสผ่าน (≥ 4 ตัว)" autocomplete="new-password" />
+              <button type="button" class="btn-toggle-pw" title="แสดง/ซ่อนรหัสผ่าน" aria-label="แสดง/ซ่อนรหัสผ่าน">
+                <i class="fa-solid fa-eye"></i>
+              </button>
+            </div>
+            <button type="button" class="btn-primary" id="addUserBtn">
+              <i class="fa-solid fa-user-plus"></i> เพิ่มผู้ใช้
+            </button>
+          </div>
+          <p class="login-error" id="addUserError"></p>
+          <p class="login-success" id="addUserSuccess" style="display:none;"></p>
+        </div>
+      </div>
+
       <p class="login-error" id="settingsError"></p>
     </div>
 
